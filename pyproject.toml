@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-monitoring"
+version = "0.1.0"
+description = "Low-bandwidth REST proxy that reduces local monitoring APIs into simple responses"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "bottle>=0.13",
+  "waitress>=3.0",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "requests>=2.31",
+  "docker>=7.1",
+  "defusedxml>=0.7"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "webtest>=3",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "bandit>=1.7",
+  "types-requests>=2.31"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["bottle", "docker", "docker.*", "defusedxml", "defusedxml.*", "waitress", "webtest"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "local_monitoring.api.*"
+disallow_untyped_decorators = false

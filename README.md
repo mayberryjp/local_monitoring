@@ -12,7 +12,7 @@ when the aggregate endpoint is called.
 
 | Check | Reduces | Response shape |
 | --- | --- | --- |
-| `uptime_kuma` | An Uptime Kuma status-page slug | `{"up": N, "down": M, "total": T, "down_monitors": [id, ...]}` |
+| `uptime_kuma` | An Uptime Kuma status-page slug | `{"up": N, "down": M, "total": T, "down_monitors": [name, ...]}` |
 | `webdav` | A single file's WebDAV last-modified time | `{"result": "OK"\|"STALE", "recent": bool, "timestamp": ..., "age_hours": ..., "threshold_hours": ...}` |
 | `docker_updater` | [docker-updater](https://github.com/liquidguru/docker-updater) `/api/status` | `{"pending_updates": N, "pending_images": [image, ...]}` |
 | `docker_containers` | The Docker socket | `{"running": N, "stopped": M, "total": T, "stopped_containers": [name, ...]}` |
@@ -39,7 +39,7 @@ Example `/summary`:
 {
   "status": "ok",
   "checks": {
-    "uptime_kuma": {"status": "ok", "up": 12, "down": 1, "total": 13, "down_monitors": ["7"]},
+    "uptime_kuma": {"status": "ok", "up": 12, "down": 1, "total": 13, "down_monitors": ["Database"]},
     "webdav": {"status": "ok", "result": "OK", "recent": true, "timestamp": "2026-09-14T08:12:00-04:00", "age_hours": 1.2, "threshold_hours": 24.0},
     "docker_updater": {"status": "ok", "pending_updates": 3, "pending_images": ["nginx:latest", "ghcr.io/owner/app:main", "redis:7"]},
     "docker_containers": {"status": "ok", "running": 21, "stopped": 2, "total": 23, "stopped_containers": ["backup-runner", "old-db"]}

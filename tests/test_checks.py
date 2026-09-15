@@ -90,12 +90,22 @@ def test_individual_check_error_returns_503(
 
 
 def test_uptime_kuma_counts_up_and_down(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload = {"heartbeatList": {"1": [{"status": 1}], "2": [{"status": 0}], "3": [{"status": 1}]}}
+    heartbeats = {"heartbeatList": {"1": [{"status": 1}], "2": [{"status": 0}], "3": [{"status": 1}]}}
+    config = {"publicGroupList": [{"monitorList": [{"id": 2, "name": "Database"}]}]}
+
+    def fake_get(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        return _FakeResponse(200, heartbeats if "/heartbeat/" in url else config)
+
     monkeypatch.setattr(uptime_kuma.settings, "uptime_kuma_base_url", "http://kuma")
     monkeypatch.setattr(uptime_kuma.settings, "uptime_kuma_slug", "mine")
-    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, payload))
+    monkeypatch.setattr(requests, "get", fake_get)
 
-    assert uptime_kuma.collect() == {"up": 2, "down": 1, "total": 3, "down_monitors": ["2"]}
+    assert uptime_kuma.collect() == {
+        "up": 2,
+        "down": 1,
+        "total": 3,
+        "down_monitors": ["Database"],
+    }
 
 
 def test_docker_updater_counts_pending(monkeypatch: pytest.MonkeyPatch) -> None:

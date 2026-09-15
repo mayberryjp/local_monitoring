@@ -23,5 +23,5 @@ def collect() -> dict[str, Any]:
         raise CheckError("upstream_error", f"docker-updater returned HTTP {resp.status_code}")
 
     containers = resp.json().get("containers") or []
-    pending = sum(1 for c in containers if c.get("status") == "update")
-    return {"pending_updates": pending}
+    pending_images = [c.get("image") for c in containers if c.get("status") == "update"]
+    return {"pending_updates": len(pending_images), "pending_images": pending_images}

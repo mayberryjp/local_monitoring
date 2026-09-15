@@ -28,11 +28,14 @@ def collect() -> dict[str, Any]:
     heartbeats = resp.json().get("heartbeatList") or {}
     up = 0
     total = 0
-    for beats in heartbeats.values():
+    down_monitors: list[str] = []
+    for monitor_id, beats in heartbeats.items():
         if not beats:
             continue
         total += 1
         # Uptime Kuma status: 1 = up, everything else (0/2/3) is not up.
         if beats[-1].get("status") == 1:
             up += 1
-    return {"up": up, "down": total - up, "total": total}
+        else:
+            down_monitors.append(monitor_id)
+    return {"up": up, "down": total - up, "total": total, "down_monitors": down_monitors}

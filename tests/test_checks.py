@@ -95,12 +95,21 @@ def test_uptime_kuma_counts_up_and_down(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(uptime_kuma.settings, "uptime_kuma_slug", "mine")
     monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, payload))
 
-    assert uptime_kuma.collect() == {"up": 2, "down": 1, "total": 3}
+    assert uptime_kuma.collect() == {"up": 2, "down": 1, "total": 3, "down_monitors": ["2"]}
 
 
 def test_docker_updater_counts_pending(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload = {"containers": [{"status": "update"}, {"status": "ok"}, {"status": "update"}]}
+    payload = {
+        "containers": [
+            {"status": "update", "image": "nginx:latest"},
+            {"status": "ok", "image": "redis:7"},
+            {"status": "update", "image": "ghcr.io/owner/app:main"},
+        ]
+    }
     monkeypatch.setattr(docker_updater.settings, "docker_updater_base_url", "http://du")
     monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, payload))
 
-    assert docker_updater.collect() == {"pending_updates": 2}
+    assert docker_updater.collect() == {
+        "pending_updates": 2,
+        "pending_images": ["nginx:latest", "ghcr.io/owner/app:main"],
+    }

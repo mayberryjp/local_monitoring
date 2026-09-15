@@ -25,4 +25,10 @@ def collect() -> dict[str, Any]:
 
     running = sum(1 for c in containers if c.status == "running")
     total = len(containers)
-    return {"running": running, "stopped": total - running, "total": total}
+    stopped_containers = [c.name for c in containers if c.status != "running"]
+    return {
+        "running": running,
+        "stopped": total - running,
+        "total": total,
+        "stopped_containers": stopped_containers,
+    }

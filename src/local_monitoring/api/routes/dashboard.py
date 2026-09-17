@@ -13,80 +13,79 @@ _DASHBOARD_HTML = """<!doctype html>
 <title>local-monitoring \u00b7 status</title>
 <style>
   :root {
-    --bg: #0f172a; --card: #1e293b; --border: #334155;
-    --text: #e2e8f0; --muted: #94a3b8;
-    --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444; --accent: #38bdf8;
+    --bg: #1d2021; --panel: #282828; --border: #3c3836;
+    --fg: #d4be98; --muted: #928374;
+    --ok: #a9b665; --warn: #d8a657; --bad: #ea6962; --accent: #89b482;
   }
   * { box-sizing: border-box; }
+  html { background: var(--bg); }
   body {
-    margin: 0; background: var(--bg); color: var(--text); line-height: 1.5;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
   }
-  .wrap { max-width: 900px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-  header { display: flex; align-items: center; justify-content: space-between;
-           gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
-  h1 { font-size: 1.35rem; margin: 0; letter-spacing: .5px; }
-  h1 .sub { display: block; color: var(--muted); font-weight: 400; font-size: .85rem; }
-  .banner { display: flex; align-items: center; gap: .9rem; padding: 1rem 1.25rem;
-            border: 1px solid var(--border); background: var(--card); border-radius: 14px;
-            margin-bottom: 1.5rem; font-size: 1.1rem; font-weight: 600; }
-  .banner .dot { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%;
-                 background: var(--muted); }
-  .banner.ok { border-color: rgba(34,197,94,.4); }
-  .banner.ok .dot { background: var(--ok); box-shadow: 0 0 12px var(--ok); }
-  .banner.issues { border-color: rgba(239,68,68,.4); }
-  .banner.issues .dot { background: var(--bad); box-shadow: 0 0 12px var(--bad); }
-  .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-          padding: 1.1rem 1.2rem; }
-  .card h2 { display: flex; align-items: center; gap: .6rem; margin: 0 0 .75rem; font-size: .95rem; }
-  .card h2 .ico { color: var(--accent); }
-  .badge { margin-left: auto; padding: .15rem .6rem; border-radius: 999px; font-size: .8rem;
-           font-weight: 700; color: var(--muted); background: #0b1220; border: 1px solid var(--border); }
-  .card.has-issues { border-color: rgba(245,158,11,.45); }
-  .card.has-issues .badge { color: #0b1220; background: var(--warn); border-color: transparent; }
-  .card.errored { border-color: rgba(239,68,68,.45); }
-  .card.errored .badge { color: #0b1220; background: var(--bad); border-color: transparent; }
-  .items { list-style: none; margin: 0; padding: 0; }
-  .items li { display: flex; align-items: center; gap: .55rem; padding: .45rem .1rem;
-              border-top: 1px solid var(--border); font-size: .9rem; word-break: break-all; }
-  .items li:first-child { border-top: none; }
-  .items li::before { content: "\u25b2"; color: var(--warn); font-size: .7rem; }
-  .allclear { display: flex; align-items: center; gap: .5rem; color: var(--ok); font-size: .9rem; }
-  .allclear::before { content: "\u2713"; font-weight: 700; }
-  .err { color: var(--bad); font-size: .85rem; }
-  button { font: inherit; color: var(--text); background: var(--card);
-           border: 1px solid var(--border); border-radius: 10px; padding: .45rem .9rem; cursor: pointer; }
-  button:hover { border-color: var(--accent); }
-  button:disabled { opacity: .6; cursor: default; }
-  footer { margin-top: 1.5rem; color: var(--muted); font-size: .8rem; text-align: center; }
-  .spin { display: inline-block; animation: sp .8s linear infinite; }
-  @keyframes sp { to { transform: rotate(360deg); } }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem;
+           flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: .8rem;
+           margin-bottom: 1.6rem; }
+  .title { font-size: 1.2rem; font-weight: 700; }
+  .title::before { content: "> "; color: var(--accent); }
+  .tag { color: var(--muted); font-size: .82rem; margin-top: .2rem; }
+  button { font: inherit; font-size: .82rem; color: var(--fg); background: transparent;
+           border: 1px solid var(--border); padding: .35rem .85rem; cursor: pointer; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button:disabled:hover { border-color: var(--border); color: var(--fg); }
+  .status { display: flex; align-items: center; gap: .7rem; margin-bottom: 2rem; font-weight: 700;
+            background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--muted);
+            padding: .7rem .9rem; }
+  .status .sw { flex: 0 0 auto; width: .8rem; height: .8rem; background: var(--muted); }
+  .status.ok { color: var(--ok); border-left-color: var(--ok); }
+  .status.ok .sw { background: var(--ok); }
+  .status.alert { color: var(--bad); border-left-color: var(--bad); }
+  .status.alert .sw { background: var(--bad); }
+  .block { margin: 0 0 1.7rem; }
+  .row { display: flex; align-items: baseline; gap: .6rem; }
+  .row .label { white-space: nowrap; font-weight: 700; }
+  .row .lead { flex: 1 1 auto; border-bottom: 1px dotted var(--border); transform: translateY(-.3em); }
+  .row .count { white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .block.issues .label, .block.issues .count { color: var(--warn); }
+  .block.errored .label, .block.errored .count { color: var(--bad); }
+  .body { margin-top: .45rem; }
+  .line { display: flex; gap: .7rem; padding: .12rem 0; word-break: break-all; }
+  .line .mk { flex: 0 0 1ch; text-align: center; font-weight: 700; }
+  .line.ok { color: var(--muted); }
+  .line.ok .mk { color: var(--ok); }
+  .line.bad .mk { color: var(--warn); }
+  .line.err { color: var(--bad); }
+  .line.err .mk { color: var(--bad); }
+  footer { margin-top: 2rem; border-top: 1px solid var(--border); padding-top: .8rem;
+           color: var(--muted); font-size: .8rem; }
 </style>
 </head>
 <body>
   <div class="wrap">
     <header>
-      <h1>local-monitoring<span class="sub">homelab status</span></h1>
-      <button id="refresh" type="button"><span id="ricon">\u21bb</span> Refresh</button>
+      <div>
+        <div class="title">local-monitoring</div>
+        <div class="tag">homelab status board</div>
+      </div>
+      <button id="refresh" type="button">refresh</button>
     </header>
 
-    <div id="banner" class="banner"><span class="dot"></span><span id="banner-text">Loading\u2026</span></div>
+    <div id="status" class="status"><span class="sw"></span><span id="status-text">loading\u2026</span></div>
 
-    <div class="grid">
-      <section class="card" id="card-monitors">
-        <h2><span class="ico">\u25c9</span> Down monitors <span class="badge">\u2013</span></h2>
-        <div class="body"></div>
-      </section>
-      <section class="card" id="card-containers">
-        <h2><span class="ico">\u25a3</span> Stopped containers <span class="badge">\u2013</span></h2>
-        <div class="body"></div>
-      </section>
-      <section class="card" id="card-updates">
-        <h2><span class="ico">\u2b73</span> Pending updates <span class="badge">\u2013</span></h2>
-        <div class="body"></div>
-      </section>
-    </div>
+    <section class="block" id="card-monitors">
+      <div class="row"><span class="label">down monitors</span><span class="lead"></span><span class="count">\u2013</span></div>
+      <div class="body"></div>
+    </section>
+    <section class="block" id="card-containers">
+      <div class="row"><span class="label">stopped containers</span><span class="lead"></span><span class="count">\u2013</span></div>
+      <div class="body"></div>
+    </section>
+    <section class="block" id="card-updates">
+      <div class="row"><span class="label">pending updates</span><span class="lead"></span><span class="count">\u2013</span></div>
+      <div class="body"></div>
+    </section>
 
     <footer id="footer">\u2014</footer>
   </div>
@@ -99,9 +98,8 @@ _DASHBOARD_HTML = """<!doctype html>
       { id: "card-updates", key: "docker_updater", list: "pending_images", empty: "Everything up to date" }
     ];
     var btn = document.getElementById("refresh");
-    var ricon = document.getElementById("ricon");
-    var banner = document.getElementById("banner");
-    var bannerText = document.getElementById("banner-text");
+    var statusEl = document.getElementById("status");
+    var statusText = document.getElementById("status-text");
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, function (c) {
@@ -109,37 +107,40 @@ _DASHBOARD_HTML = """<!doctype html>
       });
     }
 
+    function line(cls, mk, text) {
+      return '<div class="line ' + cls + '"><span class="mk">' + mk + "</span>" + escapeHtml(text) + "</div>";
+    }
+
     function renderCard(cfg, check) {
       var el = document.getElementById(cfg.id);
-      var badge = el.querySelector(".badge");
+      var count = el.querySelector(".count");
       var body = el.querySelector(".body");
-      el.classList.remove("has-issues", "errored");
+      el.classList.remove("issues", "errored");
 
       if (!check || check.status === "error") {
         el.classList.add("errored");
-        badge.textContent = "!";
-        var msg = check && check.error ? check.error : "unavailable";
-        body.innerHTML = '<div class="err">Check failed: ' + escapeHtml(msg) + "</div>";
+        count.textContent = "!";
+        body.innerHTML = line("err", "\u00d7", check && check.error ? check.error : "unavailable");
         return "error";
       }
 
       var items = Array.isArray(check[cfg.list]) ? check[cfg.list] : [];
-      badge.textContent = items.length;
+      count.textContent = items.length;
       if (items.length === 0) {
-        body.innerHTML = '<div class="allclear">' + escapeHtml(cfg.empty) + "</div>";
+        body.innerHTML = line("ok", "\u2022", cfg.empty);
         return "ok";
       }
-      el.classList.add("has-issues");
-      body.innerHTML = '<ul class="items">' + items.map(function (i) {
-        return "<li>" + escapeHtml(i) + "</li>";
-      }).join("") + "</ul>";
+      el.classList.add("issues");
+      body.innerHTML = items.map(function (i) {
+        return line("bad", "!", i);
+      }).join("");
       return "issues";
     }
 
     function refresh() {
       if (btn.disabled) return;
       btn.disabled = true;
-      ricon.classList.add("spin");
+      btn.textContent = "refreshing\u2026";
       fetch("/summary", { cache: "no-store" }).then(function (r) {
         return r.json();
       }).then(function (data) {
@@ -151,23 +152,24 @@ _DASHBOARD_HTML = """<!doctype html>
           if (state === "error") errors++;
         });
         if (issues === 0 && errors === 0) {
-          banner.className = "banner ok";
-          bannerText.textContent = "All clear";
+          statusEl.className = "status ok";
+          statusText.textContent = "OK \u2014 all clear";
         } else {
-          banner.className = "banner issues";
+          statusEl.className = "status alert";
           var parts = [];
           if (issues) parts.push(issues + " area" + (issues === 1 ? "" : "s") + " need attention");
           if (errors) parts.push(errors + " check" + (errors === 1 ? "" : "s") + " unavailable");
-          bannerText.textContent = parts.join(" \u00b7 ");
+          statusText.textContent = "ATTENTION \u2014 " + parts.join(" \u00b7 ");
         }
-        document.getElementById("footer").textContent = "Updated " + new Date().toLocaleTimeString();
+        document.getElementById("footer").textContent =
+          "updated " + new Date().toLocaleTimeString() + " \u00b7 auto every 30s";
       }).catch(function (e) {
-        banner.className = "banner issues";
-        bannerText.textContent = "Failed to load status";
+        statusEl.className = "status alert";
+        statusText.textContent = "failed to load status";
         document.getElementById("footer").textContent = String(e);
       }).then(function () {
         btn.disabled = false;
-        ricon.classList.remove("spin");
+        btn.textContent = "refresh";
       });
     }
 

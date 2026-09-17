@@ -21,6 +21,7 @@ when the aggregate endpoint is called.
 
 | Method | Path | Description |
 | --- | --- | --- |
+| `GET` | `/` | HTML status page rendering the down monitors, stopped containers, and pending updates. |
 | `GET` | `/health` | Process liveness. |
 | `GET` | `/ready` | Readiness (always ok — downstreams are checked per request). |
 | `GET` | `/summary` | All four checks in one object, run in parallel. |

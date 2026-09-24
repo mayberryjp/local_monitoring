@@ -10,7 +10,8 @@ _DASHBOARD_HTML = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>local-monitoring \u00b7 status</title>
+<title>Local Monitoring \u00b7 Status</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231d2021'/%3E%3Cpath d='M3 17h5l3-8 4 14 3-9 2 3h6' fill='none' stroke='%23a9b665' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #1d2021; --panel: #282828; --border: #3c3836;

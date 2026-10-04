@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -10,6 +11,8 @@ from webtest import TestApp
 
 from local_monitoring.domain import (
     docker_containers,
+    docker_images,
+    docker_monitors,
     docker_updater,
     uptime_kuma,
     webdav,
@@ -34,12 +37,21 @@ def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(
         docker_containers, "collect", lambda: {"running": 5, "stopped": 2, "total": 7}
     )
+    monkeypatch.setattr(docker_monitors, "collect", lambda: {"monitored": 6, "unmonitored": 1})
+    monkeypatch.setattr(docker_images, "collect", lambda: {"unused": 2, "total": 25})
 
     resp = client.get("/summary")
 
     assert resp.status_code == 200
     checks = resp.json["checks"]
-    assert set(checks) == {"uptime_kuma", "webdav", "docker_updater", "docker_containers"}
+    assert set(checks) == {
+        "uptime_kuma",
+        "webdav",
+        "docker_updater",
+        "docker_containers",
+        "docker_monitors",
+        "docker_images",
+    }
     assert checks["uptime_kuma"] == {"status": "ok", "up": 2, "down": 1, "total": 3}
     assert checks["docker_updater"]["pending_updates"] == 4
 
@@ -56,6 +68,8 @@ def test_summary_reports_partial_failure(
     monkeypatch.setattr(
         docker_containers, "collect", lambda: {"running": 1, "stopped": 0, "total": 1}
     )
+    monkeypatch.setattr(docker_monitors, "collect", lambda: {"monitored": 1, "unmonitored": 0})
+    monkeypatch.setattr(docker_images, "collect", lambda: {"unused": 0, "total": 10})
 
     resp = client.get("/summary")
 
@@ -122,4 +136,73 @@ def test_docker_updater_counts_pending(monkeypatch: pytest.MonkeyPatch) -> None:
     assert docker_updater.collect() == {
         "pending_updates": 2,
         "pending_images": ["nginx:latest", "ghcr.io/owner/app:main"],
+    }
+
+
+def test_docker_monitors_flags_uncovered_containers(monkeypatch: pytest.MonkeyPatch) -> None:
+    blob = (
+        "# comment line\n"
+        "homeassistant.azure.mayberry.farm,docker.azure.mayberry.farm,86400\n"
+        "caddy.azure.mayberry.farm,docker.azure.mayberry.farm,86400\n"
+        "web.azure.mayberry.farm,docker.azure.mayberry.farm,86400\n"
+        "\n"
+        "bitwarden.azure.mayberry.farm,docker.azure.mayberry.farm,86400\n"
+    )
+    monitors = {
+        "monitors": [
+            {"id": 1, "name": "AZURE CONTAINER CADDY", "type": "docker"},
+            {"id": 2, "name": "AZURE CONTAINER BITWARDEN", "type": "docker"},
+            {"id": 3, "name": "AZURE CONTAINER HOMEASSISTANT", "type": "http"},
+            {"id": 4, "name": "AZURE CONTAINER WEBHOOK", "type": "docker"},
+        ],
+        "count": 4,
+    }
+
+    def fake_get(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        return _FakeResponse(200, monitors if "/v1/monitors" in url else None, text=blob)
+
+    monkeypatch.setattr(docker_monitors.settings, "container_blob_url", "http://blob/list")
+    monkeypatch.setattr(
+        docker_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(docker_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    # caddy + bitwarden match the last token; homeassistant's monitor is http (not
+    # docker); "web" must NOT match "WEBHOOK" (last-token whole-word, not substring).
+    assert docker_monitors.collect() == {
+        "monitored": 2,
+        "unmonitored": 2,
+        "total": 4,
+        "unmonitored_containers": ["homeassistant", "web"],
+    }
+
+
+def test_docker_monitors_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(docker_monitors.settings, "container_blob_url", "")
+    monkeypatch.setattr(docker_monitors.settings, "uptime_kuma_v2_api_base_url", "")
+    with pytest.raises(CheckError) as excinfo:
+        docker_monitors.collect()
+    assert excinfo.value.code == "not_configured"
+
+
+def test_docker_images_flags_unused_and_dangling(monkeypatch: pytest.MonkeyPatch) -> None:
+    images = [
+        SimpleNamespace(id="sha256:aaa", tags=["nginx:latest"], short_id="sha256:aaaaaa"),
+        SimpleNamespace(id="sha256:bbb", tags=["redis:7"], short_id="sha256:bbbbbb"),
+        SimpleNamespace(id="sha256:ccc", tags=[], short_id="sha256:cccccc"),
+    ]
+    containers = [SimpleNamespace(attrs={"ImageID": "sha256:aaa"})]
+    client = SimpleNamespace(
+        images=SimpleNamespace(list=lambda *a, **k: images),
+        containers=SimpleNamespace(list=lambda *a, **k: containers),
+        close=lambda: None,
+    )
+    monkeypatch.setattr(docker_images.docker, "DockerClient", lambda *a, **k: client)
+
+    # nginx is used by a container; redis is used by none; the untagged image is dangling.
+    assert docker_images.collect() == {
+        "unused": 2,
+        "total": 3,
+        "unused_images": ["redis:7", "sha256:cccccc"],
     }

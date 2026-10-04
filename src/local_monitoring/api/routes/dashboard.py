@@ -87,6 +87,14 @@ _DASHBOARD_HTML = """<!doctype html>
       <div class="row"><span class="label">pending updates</span><span class="lead"></span><span class="count">\u2013</span></div>
       <div class="body"></div>
     </section>
+    <section class="block" id="card-docker-monitors">
+      <div class="row"><span class="label">unmonitored containers</span><span class="lead"></span><span class="count">\u2013</span></div>
+      <div class="body"></div>
+    </section>
+    <section class="block" id="card-docker-images">
+      <div class="row"><span class="label">unused images</span><span class="lead"></span><span class="count">\u2013</span></div>
+      <div class="body"></div>
+    </section>
 
     <footer id="footer">\u2014</footer>
   </div>
@@ -96,7 +104,9 @@ _DASHBOARD_HTML = """<!doctype html>
     var cards = [
       { id: "card-monitors", key: "uptime_kuma", list: "down_monitors", empty: "All monitors up" },
       { id: "card-containers", key: "docker_containers", list: "stopped_containers", empty: "All containers running" },
-      { id: "card-updates", key: "docker_updater", list: "pending_images", empty: "Everything up to date" }
+      { id: "card-updates", key: "docker_updater", list: "pending_images", empty: "Everything up to date" },
+      { id: "card-docker-monitors", key: "docker_monitors", list: "unmonitored_containers", empty: "All containers monitored" },
+      { id: "card-docker-images", key: "docker_images", list: "unused_images", empty: "No unused images" }
     ];
     var btn = document.getElementById("refresh");
     var statusEl = document.getElementById("status");

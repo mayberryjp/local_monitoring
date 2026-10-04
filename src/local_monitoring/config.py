@@ -30,5 +30,10 @@ class Settings(BaseSettings):
     # Docker socket for the running/stopped container count.
     docker_host: str = Field("unix:///var/run/docker.sock", validation_alias="DOCKER_HOST")
 
+    # Per-site container list -> Uptime Kuma v2 docker-monitor coverage.
+    container_blob_url: str = Field("", validation_alias="CONTAINER_BLOB")
+    uptime_kuma_v2_api_base_url: str = Field("", validation_alias="UPTIME_KUMA_V2_API_BASE_URL")
+    uptime_kuma_v2_api_key: str = Field("", validation_alias="UPTIME_KUMA_V2_API_KEY")
+
 
 settings = Settings()

@@ -5,7 +5,7 @@ high-bandwidth monitoring APIs and reduces each one to a tiny JSON response, so 
 remote/low-bandwidth client can poll a single small endpoint instead of several
 large ones.
 
-All four downstream requests are issued **in parallel** (thread pool, not asyncio)
+All six downstream requests are issued **in parallel** (thread pool, not asyncio)
 when the aggregate endpoint is called.
 
 ## Checks
@@ -16,19 +16,23 @@ when the aggregate endpoint is called.
 | `webdav` | A single file's WebDAV last-modified time | `{"result": "OK"\|"STALE", "recent": bool, "timestamp": ..., "age_hours": ..., "threshold_hours": ...}` |
 | `docker_updater` | [docker-updater](https://github.com/liquidguru/docker-updater) `/api/status` | `{"pending_updates": N, "pending_images": [image, ...]}` |
 | `docker_containers` | The Docker socket | `{"running": N, "stopped": M, "total": T, "stopped_containers": [name, ...]}` |
+| `docker_monitors` | A per-site container list vs. [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api) `docker` monitors | `{"monitored": N, "unmonitored": M, "total": T, "unmonitored_containers": [name, ...]}` |
+| `docker_images` | The Docker socket (images unused by any container, plus dangling) | `{"unused": N, "total": T, "unused_images": [tag_or_id, ...]}` |
 
 ## Endpoints
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/` | HTML status page rendering the down monitors, stopped containers, and pending updates. |
+| `GET` | `/` | HTML status page rendering the down monitors, stopped containers, pending updates, unmonitored containers, and unused images. |
 | `GET` | `/health` | Process liveness. |
 | `GET` | `/ready` | Readiness (always ok — downstreams are checked per request). |
-| `GET` | `/summary` | All four checks in one object, run in parallel. |
+| `GET` | `/summary` | All six checks in one object, run in parallel. |
 | `GET` | `/uptime-kuma` | Uptime Kuma up/down counter. |
 | `GET` | `/webdav` | WebDAV file freshness. |
 | `GET` | `/docker-updater` | docker-updater pending-update count. |
 | `GET` | `/docker` | Running/stopped container count. |
+| `GET` | `/docker-monitors` | Containers missing an Uptime Kuma v2 docker monitor. |
+| `GET` | `/docker-images` | Unused/dangling image count. |
 
 `/summary` always returns `200`; a failing check appears as an error object under its
 key. Individual check endpoints return `503` with a JSON error envelope when their
@@ -43,7 +47,9 @@ Example `/summary`:
     "uptime_kuma": {"status": "ok", "up": 12, "down": 1, "total": 13, "down_monitors": ["Database"]},
     "webdav": {"status": "ok", "result": "OK", "recent": true, "timestamp": "2026-09-14T08:12:00-04:00", "age_hours": 1.2, "threshold_hours": 24.0},
     "docker_updater": {"status": "ok", "pending_updates": 3, "pending_images": ["nginx:latest", "ghcr.io/owner/app:main", "redis:7"]},
-    "docker_containers": {"status": "ok", "running": 21, "stopped": 2, "total": 23, "stopped_containers": ["backup-runner", "old-db"]}
+    "docker_containers": {"status": "ok", "running": 21, "stopped": 2, "total": 23, "stopped_containers": ["backup-runner", "old-db"]},
+    "docker_monitors": {"status": "ok", "monitored": 6, "unmonitored": 1, "total": 7, "unmonitored_containers": ["homeassistant"]},
+    "docker_images": {"status": "ok", "unused": 2, "total": 25, "unused_images": ["redis:7", "sha256:0a1b2c3d4e5f"]}
   }
 }
 ```
@@ -67,6 +73,9 @@ All configuration is via environment variables, set in `docker-compose.yml`.
 | `WEBDAV_RECENT_HOURS` | `24` | File is "recent" if modified within this many hours. |
 | `DOCKER_UPDATER_BASE_URL` | — | Base URL of docker-updater, e.g. `http://docker-updater:9090`. |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker socket for the container count. |
+| `CONTAINER_BLOB` | — | URL of the per-site container list (`<container>.<domain>,<target>,<ttl>` per line). |
+| `UPTIME_KUMA_V2_API_BASE_URL` | — | Base URL of [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api), e.g. `http://uptimekuma-v2-api:12000`. |
+| `UPTIME_KUMA_V2_API_KEY` | — | API key sent as the `X-API-Key` header to uptime-kuma-v2-api. |
 
 The Docker check needs read access to the mounted socket. The image runs as a
 non-root user, so grant access with a `group_add` entry matching the host's docker

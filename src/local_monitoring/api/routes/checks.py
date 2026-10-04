@@ -9,6 +9,8 @@ from bottle import Bottle, response
 
 from local_monitoring.domain import (
     docker_containers,
+    docker_images,
+    docker_monitors,
     docker_updater,
     uptime_kuma,
     webdav,
@@ -50,3 +52,11 @@ def register_check_routes(app: Bottle) -> None:
     @app.get("/docker")
     def docker_check() -> dict[str, Any]:
         return _run(docker_containers.collect)
+
+    @app.get("/docker-monitors")
+    def docker_monitors_check() -> dict[str, Any]:
+        return _run(docker_monitors.collect)
+
+    @app.get("/docker-images")
+    def docker_images_check() -> dict[str, Any]:
+        return _run(docker_images.collect)

@@ -23,6 +23,11 @@ services:
 
       # 4) Docker running/stopped container count
       DOCKER_HOST: unix:///var/run/docker.sock
+
+      # 5) Per-site container list -> Uptime Kuma v2 docker-monitor coverage
+      CONTAINER_BLOB: https://raw.githubusercontent.com/mayberryjp/localdomains/refs/heads/main/azure.mayberry.farm
+      UPTIME_KUMA_V2_API_BASE_URL: http://uptimekuma-v2-api.azure.mayberry.farm:12000
+      UPTIME_KUMA_V2_API_KEY: ""
     ports:
       - "8000:8000"
     volumes:

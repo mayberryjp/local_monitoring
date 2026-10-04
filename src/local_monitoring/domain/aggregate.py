@@ -9,6 +9,8 @@ from typing import Any
 
 from local_monitoring.domain import (
     docker_containers,
+    docker_images,
+    docker_monitors,
     docker_updater,
     uptime_kuma,
     webdav,
@@ -24,6 +26,8 @@ CHECK_MODULES: dict[str, ModuleType] = {
     "webdav": webdav,
     "docker_updater": docker_updater,
     "docker_containers": docker_containers,
+    "docker_monitors": docker_monitors,
+    "docker_images": docker_images,
 }
 
 

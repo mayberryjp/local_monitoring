@@ -142,11 +142,11 @@ def test_docker_updater_counts_pending(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_docker_monitors_flags_uncovered_containers(monkeypatch: pytest.MonkeyPatch) -> None:
     blob = (
         "# comment line\n"
-        "homeassistant.azure.mayberry.farm,docker.azure.mayberry.farm,86400\n"
-        "caddy.azure.mayberry.farm,docker.azure.mayberry.farm,86400\n"
-        "web.azure.mayberry.farm,docker.azure.mayberry.farm,86400\n"
+        "docker.azure.mayberry.farm,homeassistant.azure.mayberry.farm,86400\n"
+        "docker.azure.mayberry.farm,caddy.azure.mayberry.farm,86400\n"
+        "docker.azure.mayberry.farm,web.azure.mayberry.farm,86400\n"
         "\n"
-        "bitwarden.azure.mayberry.farm,docker.azure.mayberry.farm,86400\n"
+        "docker.azure.mayberry.farm,bitwarden.azure.mayberry.farm,86400\n"
     )
     monitors = {
         "monitors": [

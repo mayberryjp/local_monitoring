@@ -11,14 +11,17 @@ from local_monitoring.domain.errors import CheckError
 
 
 def _parse_container_names(text: str) -> list[str]:
-    """First DNS label of each line's first CSV field (``a.b.c,...`` -> ``a``), de-duplicated."""
+    """First DNS label of each line's second CSV field (``_,a.b.c,...`` -> ``a``), de-duplicated."""
     names: list[str] = []
     seen: set[str] = set()
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        container = line.split(",", 1)[0].split(".", 1)[0].strip()
+        fields = line.split(",")
+        if len(fields) < 2:
+            continue
+        container = fields[1].split(".", 1)[0].strip()
         key = container.lower()
         if container and key not in seen:
             seen.add(key)

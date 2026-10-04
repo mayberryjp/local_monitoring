@@ -30,7 +30,9 @@ def collect() -> dict[str, Any]:
     finally:
         client.close()
 
-    in_use = {c.attrs.get("ImageID") for c in containers}
+    # containers.list() returns inspect-shaped attrs (image id under "Image");
+    # the lighter list-endpoint shape uses "ImageID" instead.
+    in_use = {c.attrs.get("ImageID") or c.attrs.get("Image") for c in containers}
     # Unused = referenced by no container; dangling = untagged. Report the union.
     unused_images = [
         _image_label(img) for img in images if img.id not in in_use or not img.tags

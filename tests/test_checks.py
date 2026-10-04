@@ -192,7 +192,8 @@ def test_docker_images_flags_unused_and_dangling(monkeypatch: pytest.MonkeyPatch
         SimpleNamespace(id="sha256:bbb", tags=["redis:7"], short_id="sha256:bbbbbb"),
         SimpleNamespace(id="sha256:ccc", tags=[], short_id="sha256:cccccc"),
     ]
-    containers = [SimpleNamespace(attrs={"ImageID": "sha256:aaa"})]
+    # containers.list() yields inspect-shaped attrs: the image id is under "Image".
+    containers = [SimpleNamespace(attrs={"Image": "sha256:aaa"})]
     client = SimpleNamespace(
         images=SimpleNamespace(list=lambda *a, **k: images),
         containers=SimpleNamespace(list=lambda *a, **k: containers),

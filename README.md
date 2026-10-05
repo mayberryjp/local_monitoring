@@ -73,7 +73,7 @@ All configuration is via environment variables, set in `docker-compose.yml`.
 | `WEBDAV_RECENT_HOURS` | `24` | File is "recent" if modified within this many hours. |
 | `DOCKER_UPDATER_BASE_URL` | — | Base URL of docker-updater, e.g. `http://docker-updater:9090`. |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker socket for the container count. |
-| `CONTAINER_BLOB` | — | URL of the per-site container list; the container name is the first DNS label of each line's 2nd comma-separated field (`<target>,<container>.<domain>,<ttl>`). |
+| `CONTAINER_BLOB` | — | URL(s) of the per-site container list (comma-separate multiple URLs to merge them); the container name is the first DNS label of each line's 2nd comma-separated field (`<target>,<container>.<domain>,<ttl>`). |
 | `UPTIME_KUMA_V2_API_BASE_URL` | — | Base URL of [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api), e.g. `http://uptimekuma-v2-api:12000`. |
 | `UPTIME_KUMA_V2_API_KEY` | — | API key sent as the `X-API-Key` header to uptime-kuma-v2-api. |
 

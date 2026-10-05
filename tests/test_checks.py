@@ -178,6 +178,41 @@ def test_docker_monitors_flags_uncovered_containers(monkeypatch: pytest.MonkeyPa
     }
 
 
+def test_docker_monitors_merges_multiple_blobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    blobs = {
+        "http://blob/a": "docker.site,caddy.site.farm,86400\n",
+        "http://blob/b": (
+            "docker.site,bitwarden.site.farm,86400\ndocker.site,caddy.site.farm,86400\n"
+        ),
+    }
+    monitors = {
+        "monitors": [{"id": 1, "name": "AZURE CONTAINER CADDY", "type": "docker"}],
+        "count": 1,
+    }
+
+    def fake_get(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        if "/v1/monitors" in url:
+            return _FakeResponse(200, monitors)
+        return _FakeResponse(200, None, text=blobs[url])
+
+    monkeypatch.setattr(
+        docker_monitors.settings, "container_blob_url", "http://blob/a,http://blob/b"
+    )
+    monkeypatch.setattr(
+        docker_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(docker_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    # caddy appears in both blobs (deduped); bitwarden only in the second.
+    assert docker_monitors.collect() == {
+        "monitored": 1,
+        "unmonitored": 1,
+        "total": 2,
+        "unmonitored_containers": ["bitwarden"],
+    }
+
+
 def test_docker_monitors_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(docker_monitors.settings, "container_blob_url", "")
     monkeypatch.setattr(docker_monitors.settings, "uptime_kuma_v2_api_base_url", "")

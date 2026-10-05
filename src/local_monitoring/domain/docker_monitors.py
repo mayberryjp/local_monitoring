@@ -29,14 +29,20 @@ def _parse_container_names(text: str) -> list[str]:
     return names
 
 
-def _fetch_container_list(url: str) -> list[str]:
+def _fetch_text(url: str) -> str:
     try:
         resp = requests.get(url, timeout=settings.http_timeout_seconds)
     except requests.RequestException as exc:
         raise CheckError("upstream_unreachable", "container blob request failed", str(exc)) from exc
     if resp.status_code != 200:
         raise CheckError("upstream_error", f"container blob returned HTTP {resp.status_code}")
-    return _parse_container_names(resp.text)
+    return resp.text
+
+
+def _fetch_container_list(blob_urls: str) -> list[str]:
+    """Fetch every comma-separated blob URL and merge their container names."""
+    urls = [u.strip() for u in blob_urls.split(",") if u.strip()]
+    return _parse_container_names("\n".join(_fetch_text(url) for url in urls))
 
 
 def _fetch_docker_monitor_tokens(base_url: str, api_key: str) -> set[str]:

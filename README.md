@@ -45,6 +45,8 @@ when the aggregate endpoint is called.
 | `POST` | `/actions/delete-image` | Delete one unused image (JSON body `{"image": ...}`). |
 | `POST` | `/actions/add-ping-monitor` | Create an Uptime Kuma v2 ping monitor for one device (JSON body `{"device": ...}`). |
 | `POST` | `/actions/delete-monitor` | Delete one additional Uptime Kuma v2 monitor (JSON body `{"name": ...}`). |
+| `POST` | `/actions/start-container` | Start one stopped container (JSON body `{"name": ...}`). |
+| `POST` | `/actions/delete-container` | Delete one stopped container (JSON body `{"name": ...}`). |
 
 `/summary` always returns `200`; a failing check appears as an error object under its
 key. Individual check endpoints return `503` with a JSON error envelope when their
@@ -100,11 +102,11 @@ All configuration is via environment variables, set in `docker-compose.yml`.
 The dashboard is a dark "actions dashboard": a single table with **Monitor type**,
 **Issue**, and **Action** columns, one row per issue, where sections with no issues are
 hidden. Every row's action cell links to the relevant web UI (reusing the section URLs
-above), and actionable rows carry a singular button: **add monitor** (create a ping
-monitor for an uncovered device), **update** (a docker-updater update for one container),
-**delete image** (remove one unused image), and **delete monitor** (remove an unexpected
-Uptime Kuma monitor). These are unauthenticated `POST` actions, so only expose this
-service on a trusted network.
+above), and actionable rows carry singular buttons: **add monitor** (create a ping
+monitor for an uncovered device), **start**/**delete** (a stopped container), **update**
+(a docker-updater update for one container), **delete image** (remove one unused image),
+and **delete monitor** (remove an unexpected Uptime Kuma monitor). These are
+unauthenticated `POST` actions, so only expose this service on a trusted network.
 
 The Docker check reads the mounted socket, and the **delete image** action writes to it
 (image remove), so the socket is mounted read-write. The image runs as a non-root user,

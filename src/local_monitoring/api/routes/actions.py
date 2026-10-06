@@ -9,6 +9,7 @@ from bottle import Bottle, request, response
 
 from local_monitoring.domain import (
     additional_monitors,
+    docker_containers,
     docker_images,
     docker_updater,
     ping_monitors,
@@ -76,3 +77,17 @@ def register_action_routes(app: Bottle) -> None:
         if not name:
             return _missing("name")
         return _run(lambda: additional_monitors.delete_monitor(name))
+
+    @app.post("/actions/start-container")
+    def start_container() -> dict[str, Any]:
+        name = _target("name")
+        if not name:
+            return _missing("name")
+        return _run(lambda: docker_containers.start_container(name))
+
+    @app.post("/actions/delete-container")
+    def delete_container() -> dict[str, Any]:
+        name = _target("name")
+        if not name:
+            return _missing("name")
+        return _run(lambda: docker_containers.remove_container(name))

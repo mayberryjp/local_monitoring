@@ -110,7 +110,11 @@ _DASHBOARD_HTML = """<!doctype html>
       { type: "Allowlist", key: "allowlist", list: "unmatched_allowed", link: "kuma",
         note: "matches no monitor" },
       { type: "Container", key: "docker_containers", list: "stopped_containers",
-        link: "portainer", note: "stopped" },
+        link: "portainer", note: "stopped",
+        actions: [
+          { url: "/actions/start-container", label: "start", field: "name" },
+          { url: "/actions/delete-container", label: "delete", field: "name", danger: true }
+        ] },
       { type: "Update", key: "docker_updater", list: "pending_containers", link: "updater",
         note: "update available",
         action: { url: "/actions/update", label: "update", field: "name" },
@@ -146,14 +150,15 @@ _DASHBOARD_HTML = """<!doctype html>
       var issue = escapeHtml(mapped.issue);
       if (card.note) issue += ' <span class="sub">\u00b7 ' + escapeHtml(card.note) + "</span>";
       var act = "";
-      if (card.action) {
-        var cls = "btn" + (card.action.danger ? " danger" : "");
-        act += '<button class="' + cls + '" data-url="' + card.action.url +
-          '" data-field="' + card.action.field +
+      var actions = card.actions || (card.action ? [card.action] : []);
+      actions.forEach(function (a) {
+        var cls = "btn" + (a.danger ? " danger" : "");
+        act += '<button class="' + cls + '" data-url="' + a.url +
+          '" data-field="' + a.field +
           '" data-target="' + encodeURIComponent(mapped.target) +
-          '" data-label="' + escapeHtml(card.action.label) + '">' +
-          escapeHtml(card.action.label) + "</button>";
-      }
+          '" data-label="' + escapeHtml(a.label) + '">' +
+          escapeHtml(a.label) + "</button>";
+      });
       act += openLink(card);
       if (!act) act = '<span class="sub">\u2014</span>';
       return '<tr><td class="type">' + escapeHtml(card.type) + '</td><td class="issue">' +
@@ -205,6 +210,8 @@ _DASHBOARD_HTML = """<!doctype html>
       if (url.indexOf("add-ping-monitor") >= 0) return "created monitor " + (d.created || target);
       if (url.indexOf("delete-monitor") >= 0) return "deleted monitor " + (d.deleted || target);
       if (url.indexOf("delete-image") >= 0) return "removed image " + (d.removed || target);
+      if (url.indexOf("start-container") >= 0) return "started " + (d.started || target);
+      if (url.indexOf("delete-container") >= 0) return "deleted container " + (d.deleted || target);
       if (url.indexOf("update") >= 0) return "update triggered for " + (d.triggered || target);
       return "done";
     }

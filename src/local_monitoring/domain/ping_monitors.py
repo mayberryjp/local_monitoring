@@ -13,6 +13,10 @@ from local_monitoring.domain.errors import CheckError
 # Uptime Kuma's ping probe is type ``ping``; accept ``icmp`` too for forward safety.
 PING_TYPES = {"ping", "icmp"}
 
+# Fixed polling cadence for created ping monitors. The SANDO device line's third
+# field is a DNS TTL (86400s), not a monitor interval, so it is not used here.
+PING_INTERVAL_SECONDS = 60
+
 
 def _ping_monitor_tokens(base_url: str, api_key: str) -> set[str]:
     """Upper-cased last word of each ping/icmp monitor name (``OFFICE PING NETGEARSWITCH``)."""
@@ -22,15 +26,6 @@ def _ping_monitor_tokens(base_url: str, api_key: str) -> set[str]:
         for m in monitors
         if m.get("type") in PING_TYPES and m.get("name")
     }
-
-
-def _parse_interval(raw: str) -> int:
-    """Clamp a device line's interval to Uptime Kuma's accepted bounds (20-86400s)."""
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        return 86400
-    return max(20, min(86400, value))
 
 
 def _device_records(text: str) -> list[dict[str, Any]]:
@@ -58,7 +53,6 @@ def _device_records(text: str) -> list[dict[str, Any]]:
                 "device": device,
                 "site": site,
                 "hostname": ip or domain,
-                "interval": _parse_interval(fields[2] if len(fields) > 2 else ""),
             }
         )
     return records
@@ -89,9 +83,9 @@ def collect() -> dict[str, Any]:
 def add_ping_monitor(device: str) -> dict[str, Any]:
     """Create an Uptime Kuma v2 ping monitor for a device from the SANDO list.
 
-    The monitor name/hostname/interval come from the authoritative SANDO blob, not from
-    the caller, so an unknown device is rejected rather than used to craft an arbitrary
-    monitor.
+    The monitor name/hostname come from the authoritative SANDO blob, not from the
+    caller, so an unknown device is rejected rather than used to craft an arbitrary
+    monitor. The polling interval is a fixed ``PING_INTERVAL_SECONDS``.
     """
     if not settings.sando_devices_url or not settings.uptime_kuma_v2_api_base_url:
         raise CheckError("not_configured", "ping-monitors check is not configured")
@@ -107,7 +101,7 @@ def add_ping_monitor(device: str) -> dict[str, Any]:
         "type": "ping",
         "name": name,
         "hostname": record["hostname"],
-        "interval": record["interval"],
+        "interval": PING_INTERVAL_SECONDS,
     }
     base = settings.uptime_kuma_v2_api_base_url.rstrip("/")
     try:

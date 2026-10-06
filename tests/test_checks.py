@@ -395,7 +395,9 @@ def test_ping_monitors_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_add_ping_monitor_creates_from_sando(monkeypatch: pytest.MonkeyPatch) -> None:
-    blob = "10.0.1.5,netgearswitch.office.mayberry.farm,600\n"
+    # The device line's third field is a DNS TTL (86400s) and must be ignored; the
+    # created monitor uses the fixed PING_INTERVAL_SECONDS cadence instead.
+    blob = "10.0.1.5,netgearswitch.office.mayberry.farm,86400\n"
     posted: dict[str, Any] = {}
 
     def fake_post(url: str, *a: Any, **k: Any) -> _FakeResponse:
@@ -423,7 +425,7 @@ def test_add_ping_monitor_creates_from_sando(monkeypatch: pytest.MonkeyPatch) ->
         "type": "ping",
         "name": "OFFICE PING NETGEARSWITCH",
         "hostname": "10.0.1.5",
-        "interval": 600,
+        "interval": 60,
     }
     assert posted["headers"] == {"X-API-Key": "secret"}
 
@@ -754,3 +756,87 @@ def test_action_delete_monitor_endpoint(client: TestApp, monkeypatch: pytest.Mon
     resp = client.post_json("/actions/delete-monitor", {"name": "HOME HTTP ROUTERUI"})
     assert resp.status_code == 200
     assert resp.json == {"status": "ok", "deleted": "HOME HTTP ROUTERUI", "monitor_id": 9}
+
+
+def test_docker_containers_start_container_starts_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started: dict[str, Any] = {}
+
+    def fake_start() -> None:
+        started["ok"] = True
+
+    stopped = SimpleNamespace(name="old-db", status="exited", start=fake_start)
+    running = SimpleNamespace(name="web", status="running")
+    client = SimpleNamespace(
+        containers=SimpleNamespace(list=lambda *a, **k: [running, stopped]),
+        close=lambda: None,
+    )
+    monkeypatch.setattr(docker_containers.docker, "DockerClient", lambda *a, **k: client)
+
+    assert docker_containers.start_container("old-db") == {"started": "old-db"}
+    assert started == {"ok": True}
+
+
+def test_docker_containers_start_container_rejects_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    running = SimpleNamespace(name="web", status="running", start=lambda: None)
+    client = SimpleNamespace(
+        containers=SimpleNamespace(list=lambda *a, **k: [running]), close=lambda: None
+    )
+    monkeypatch.setattr(docker_containers.docker, "DockerClient", lambda *a, **k: client)
+
+    with pytest.raises(CheckError) as excinfo:
+        docker_containers.start_container("web")
+    assert excinfo.value.code == "not_found"
+
+
+def test_docker_containers_delete_container_removes_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    removed: dict[str, Any] = {}
+
+    def fake_remove(**k: Any) -> None:
+        removed.update(k)
+
+    stopped = SimpleNamespace(name="old-db", status="exited", remove=fake_remove)
+    client = SimpleNamespace(
+        containers=SimpleNamespace(list=lambda *a, **k: [stopped]), close=lambda: None
+    )
+    monkeypatch.setattr(docker_containers.docker, "DockerClient", lambda *a, **k: client)
+
+    assert docker_containers.remove_container("old-db") == {"deleted": "old-db"}
+    assert removed == {"force": False}
+
+
+def test_docker_containers_delete_container_rejects_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    running = SimpleNamespace(name="web", status="running", remove=lambda **k: None)
+    client = SimpleNamespace(
+        containers=SimpleNamespace(list=lambda *a, **k: [running]), close=lambda: None
+    )
+    monkeypatch.setattr(docker_containers.docker, "DockerClient", lambda *a, **k: client)
+
+    with pytest.raises(CheckError) as excinfo:
+        docker_containers.remove_container("web")
+    assert excinfo.value.code == "not_found"
+
+
+def test_action_start_container_endpoint(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(docker_containers, "start_container", lambda name: {"started": name})
+    resp = client.post_json("/actions/start-container", {"name": "old-db"})
+    assert resp.status_code == 200
+    assert resp.json == {"status": "ok", "started": "old-db"}
+
+
+def test_action_delete_container_endpoint(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(docker_containers, "remove_container", lambda name: {"deleted": name})
+    resp = client.post_json("/actions/delete-container", {"name": "old-db"})
+    assert resp.status_code == 200
+    assert resp.json == {"status": "ok", "deleted": "old-db"}

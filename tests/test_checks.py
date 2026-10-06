@@ -484,6 +484,32 @@ def test_additional_monitors_not_configured(monkeypatch: pytest.MonkeyPatch) -> 
     assert excinfo.value.code == "not_configured"
 
 
+def test_additional_monitors_whitelist_partial_substring(monkeypatch: pytest.MonkeyPatch) -> None:
+    monitors = {
+        "monitors": [
+            {"id": 1, "name": "HOME HTTP ROUTERUI", "type": "http"},
+            {"id": 2, "name": "OFFICE HTTP SWITCHUI", "type": "http"},
+        ],
+        "count": 2,
+    }
+    monkeypatch.setattr(
+        additional_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(additional_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(additional_monitors.settings, "container_blob_url", "")
+    monkeypatch.setattr(additional_monitors.settings, "sando_devices_url", "")
+    # a lower-case partial ("router") whitelists any monitor whose name contains it.
+    monkeypatch.setattr(additional_monitors.settings, "allowed_additional_monitors", "router")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, monitors))
+
+    assert additional_monitors.collect() == {
+        "additional": 1,
+        "allowed": 1,
+        "total": 2,
+        "additional_monitors": ["OFFICE HTTP SWITCHUI"],
+    }
+
+
 def test_docker_updater_update_one_triggers_known(monkeypatch: pytest.MonkeyPatch) -> None:
     status = {
         "containers": [

@@ -15,7 +15,7 @@ PING_TYPES = {"ping", "icmp"}
 
 
 def _allowed() -> set[str]:
-    """Upper-cased whitelist of monitor names/tokens from ALLOWED_ADDITIONAL_MONITORS."""
+    """Upper-cased substrings from ALLOWED_ADDITIONAL_MONITORS used to whitelist monitors."""
     return {
         entry.strip().upper()
         for entry in settings.allowed_additional_monitors.split(",")
@@ -49,7 +49,9 @@ def collect() -> dict[str, Any]:
         covered = (mtype in DOCKER_TYPES and token in container_tokens) or (
             mtype in PING_TYPES and token in device_tokens
         )
-        if covered or name.upper() in allowed or token in allowed:
+        # Whitelisted when any entry is a (case-insensitive) substring of the name.
+        name_upper = name.upper()
+        if covered or any(entry in name_upper for entry in allowed):
             continue
         additional_monitors.append(name)
 

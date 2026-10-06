@@ -49,8 +49,8 @@ class Settings(BaseSettings):
     sando_devices_url: str = Field("", validation_alias="SANDO_DEVICES_URL")
 
     # Uptime Kuma monitors deliberately not tied to a container or device. A
-    # comma-separated list of monitor names (or last-word tokens) to exclude from the
-    # "additional monitors" check.
+    # comma-separated list of case-insensitive substrings; a monitor is excluded from
+    # the "additional monitors" check when any entry appears anywhere in its name.
     allowed_additional_monitors: str = Field("", validation_alias="ALLOWED_ADDITIONAL_MONITORS")
 
 

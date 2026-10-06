@@ -37,8 +37,8 @@ services:
       SANDO_DEVICES_URL: ""
 
       # 7) Uptime Kuma monitors deliberately not tied to a container or device.
-      # Comma-separated monitor names (or last-word tokens) to treat as expected so
-      # they drop out of the "additional monitors" list.
+      # Comma-separated, case-insensitive substrings: a monitor drops out of the
+      # "additional monitors" list when any entry appears anywhere in its name.
       ALLOWED_ADDITIONAL_MONITORS: ""
 
       # Browser-reachable URLs for the dashboard's section-title links. These are

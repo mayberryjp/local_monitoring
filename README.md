@@ -88,7 +88,7 @@ All configuration is via environment variables, set in `docker-compose.yml`.
 | `UPTIME_KUMA_V2_API_BASE_URL` | — | Base URL of [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api), e.g. `http://uptimekuma-v2-api:12000`. |
 | `UPTIME_KUMA_V2_API_KEY` | — | API key sent as the `X-API-Key` header to uptime-kuma-v2-api. |
 | `SANDO_DEVICES_URL` | — | URL of the per-site device list (`ip_address,domain_name,interval` lines); a device is the first DNS label of the 2nd field, matched against ping monitors named like `OFFICE PING NETGEARSWITCH`. |
-| `ALLOWED_ADDITIONAL_MONITORS` | — | Comma-separated monitor names (or last-word tokens) to exclude from the `additional_monitors` check. |
+| `ALLOWED_ADDITIONAL_MONITORS` | — | Comma-separated, case-insensitive substrings; a monitor is excluded from the `additional_monitors` check when any entry appears anywhere in its name. |
 | `UPTIME_KUMA_PUBLIC_URL` | — | Browser-reachable Uptime Kuma URL for the dashboard's monitor section links (falls back to `UPTIME_KUMA_BASE_URL`). |
 | `PORTAINER_URL` | — | Browser-reachable Portainer URL for the container and image section links. |
 | `DOCKER_UPDATER_PUBLIC_URL` | — | Browser-reachable docker-updater URL for the pending-updates section link (falls back to `DOCKER_UPDATER_BASE_URL`). |

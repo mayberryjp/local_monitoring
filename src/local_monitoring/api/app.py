@@ -7,6 +7,7 @@ from typing import Any
 
 from bottle import Bottle, JSONPlugin, response
 
+from local_monitoring.api.routes.actions import register_action_routes
 from local_monitoring.api.routes.checks import register_check_routes
 from local_monitoring.api.routes.dashboard import register_dashboard_routes
 from local_monitoring.api.routes.health import register_health_routes
@@ -24,6 +25,7 @@ def create_app() -> Bottle:
 
     register_health_routes(app)
     register_check_routes(app)
+    register_action_routes(app)
     register_dashboard_routes(app)
 
     @app.hook("after_request")

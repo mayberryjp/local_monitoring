@@ -29,11 +29,20 @@ services:
       CONTAINER_BLOB: https://raw.githubusercontent.com/mayberryjp/localdomains/refs/heads/main/azure.mayberry.farm
       UPTIME_KUMA_V2_API_BASE_URL: http://uptimekuma-v2-api.azure.mayberry.farm:12000
       UPTIME_KUMA_V2_API_KEY: ""
+
+      # Browser-reachable URLs for the dashboard's section-title links. These are
+      # the public web UIs a remote client opens, not the internal base URLs above.
+      # Leave blank to render the title as plain text instead of a link.
+      UPTIME_KUMA_PUBLIC_URL: ""
+      PORTAINER_URL: ""
+      DOCKER_UPDATER_PUBLIC_URL: ""
     ports:
       - "8000:8000"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    # The Docker check reads the socket. The image runs as a non-root user, so
-    # add the host's docker group GID here to grant read access to the socket:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The Docker check reads the socket; the "delete unused images" dashboard
+    # action also writes to it (image prune), so it is mounted read-write. The
+    # image runs as a non-root user, so add the host's docker group GID here to
+    # grant access to the socket:
     # group_add:
     #   - "999"

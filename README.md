@@ -33,6 +33,8 @@ when the aggregate endpoint is called.
 | `GET` | `/docker` | Running/stopped container count. |
 | `GET` | `/docker-monitors` | Containers missing an Uptime Kuma v2 docker monitor. |
 | `GET` | `/docker-images` | Unused/dangling image count. |
+| `POST` | `/actions/update-all` | Trigger a docker-updater update for every container with a pending update. |
+| `POST` | `/actions/prune-images` | Delete every image not used by a container (Docker `prune -a`). |
 
 `/summary` always returns `200`; a failing check appears as an error object under its
 key. Individual check endpoints return `503` with a JSON error envelope when their
@@ -76,8 +78,18 @@ All configuration is via environment variables, set in `docker-compose.yml`.
 | `CONTAINER_BLOB` | — | URL(s) of the per-site container list (comma-separate multiple URLs to merge them); the container name is the first DNS label of each line's 2nd comma-separated field (`<target>,<container>.<domain>,<ttl>`). |
 | `UPTIME_KUMA_V2_API_BASE_URL` | — | Base URL of [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api), e.g. `http://uptimekuma-v2-api:12000`. |
 | `UPTIME_KUMA_V2_API_KEY` | — | API key sent as the `X-API-Key` header to uptime-kuma-v2-api. |
+| `UPTIME_KUMA_PUBLIC_URL` | — | Browser-reachable Uptime Kuma URL for the dashboard's monitor section links (falls back to `UPTIME_KUMA_BASE_URL`). |
+| `PORTAINER_URL` | — | Browser-reachable Portainer URL for the container and image section links. |
+| `DOCKER_UPDATER_PUBLIC_URL` | — | Browser-reachable docker-updater URL for the pending-updates section link (falls back to `DOCKER_UPDATER_BASE_URL`). |
 
-The Docker check needs read access to the mounted socket. The image runs as a
+The section titles on the status page link to these web UIs (blank values render as
+plain text). The page also has two remediation buttons: **update all** on pending
+updates (fans out a docker-updater update per pending container) and **delete unused**
+on unused images (a Docker image prune). Both are unauthenticated `POST` actions, so
+only expose this service on a trusted network.
+
+The Docker check reads the mounted socket, and the **delete unused images** action
+writes to it (image prune), so the socket is mounted read-write. The image runs as a
 non-root user, so grant access with a `group_add` entry matching the host's docker
 group GID (see the commented example in `docker-compose.yml`).
 

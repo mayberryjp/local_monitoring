@@ -242,3 +242,93 @@ def test_docker_images_flags_unused_and_dangling(monkeypatch: pytest.MonkeyPatch
         "total": 3,
         "unused_images": ["redis:7", "sha256:cccccc"],
     }
+
+
+def test_docker_updater_update_all_triggers_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+    status = {
+        "containers": [
+            {"name": "web", "status": "update", "image": "nginx:latest"},
+            {"name": "db", "status": "ok", "image": "postgres:16"},
+            {"name": "cache", "status": "update", "image": "redis:7"},
+        ]
+    }
+    posted: list[str] = []
+
+    def fake_post(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        posted.append(url)
+        # 409 (already updating) must still count as triggered.
+        return _FakeResponse(409 if url.endswith("/cache") else 200, {"ok": True})
+
+    monkeypatch.setattr(docker_updater.settings, "docker_updater_base_url", "http://du")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, status))
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    assert docker_updater.update_all() == {"triggered": ["web", "cache"], "count": 2}
+    assert posted == ["http://du/api/update/web", "http://du/api/update/cache"]
+
+
+def test_docker_updater_update_all_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(docker_updater.settings, "docker_updater_base_url", "")
+    with pytest.raises(CheckError) as excinfo:
+        docker_updater.update_all()
+    assert excinfo.value.code == "not_configured"
+
+
+def test_docker_images_prune_unused_reports_reclaimed(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_prune(filters: Any = None) -> dict[str, Any]:
+        captured["filters"] = filters
+        return {
+            "ImagesDeleted": [
+                {"Untagged": "redis:7"},
+                {"Deleted": "sha256:aaa"},
+                {"Deleted": "sha256:bbb"},
+            ],
+            "SpaceReclaimed": 2 * 1024 * 1024,
+        }
+
+    client = SimpleNamespace(images=SimpleNamespace(prune=fake_prune), close=lambda: None)
+    monkeypatch.setattr(docker_images.docker, "DockerClient", lambda *a, **k: client)
+
+    # dangling=False prunes all unused images; only the two "Deleted" entries are removals.
+    assert docker_images.prune_unused() == {
+        "deleted": 2,
+        "space_reclaimed": 2 * 1024 * 1024,
+        "space_reclaimed_human": "2.0MB",
+    }
+    assert captured["filters"] == {"dangling": False}
+
+
+def test_action_update_all_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(docker_updater, "update_all", lambda: {"triggered": ["web"], "count": 1})
+    resp = client.post("/actions/update-all")
+    assert resp.status_code == 200
+    assert resp.json == {"status": "ok", "triggered": ["web"], "count": 1}
+
+
+def test_action_prune_images_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        docker_images,
+        "prune_unused",
+        lambda: {"deleted": 3, "space_reclaimed": 100, "space_reclaimed_human": "100B"},
+    )
+    resp = client.post("/actions/prune-images")
+    assert resp.status_code == 200
+    assert resp.json == {
+        "status": "ok",
+        "deleted": 3,
+        "space_reclaimed": 100,
+        "space_reclaimed_human": "100B",
+    }
+
+
+def test_action_error_returns_503(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _boom() -> dict[str, Any]:
+        raise CheckError("not_configured", "docker-updater is not configured")
+
+    monkeypatch.setattr(docker_updater, "update_all", _boom)
+    resp = client.post("/actions/update-all", expect_errors=True)
+    assert resp.status_code == 503
+    assert resp.json["status"] == "error"
+    assert resp.json["code"] == "not_configured"

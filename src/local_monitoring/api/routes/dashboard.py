@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
 from bottle import Bottle, response
+
+from local_monitoring.config import settings
 
 _DASHBOARD_HTML = """<!doctype html>
 <html lang="en">
@@ -36,6 +40,10 @@ _DASHBOARD_HTML = """<!doctype html>
   button:hover { border-color: var(--accent); color: var(--accent); }
   button:disabled { opacity: .5; cursor: default; }
   button:disabled:hover { border-color: var(--border); color: var(--fg); }
+  button.action { font-size: .72rem; padding: .2rem .6rem; margin-left: .7rem; flex: 0 0 auto; }
+  button.action.danger:hover { border-color: var(--bad); color: var(--bad); }
+  .row .label a { color: inherit; text-decoration: none; border-bottom: 1px solid transparent; }
+  .row .label a:hover { color: var(--accent); border-bottom-color: var(--accent); }
   .status { display: flex; align-items: center; gap: .7rem; margin-bottom: 2rem; font-weight: 700;
             background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--muted);
             padding: .7rem .9rem; }
@@ -84,7 +92,7 @@ _DASHBOARD_HTML = """<!doctype html>
       <div class="body"></div>
     </section>
     <section class="block" id="card-updates">
-      <div class="row"><span class="label">pending updates</span><span class="lead"></span><span class="count">\u2013</span></div>
+      <div class="row"><span class="label">pending updates</span><span class="lead"></span><span class="count">\u2013</span><button class="action" id="act-update-all" type="button" hidden>update all</button></div>
       <div class="body"></div>
     </section>
     <section class="block" id="card-docker-monitors">
@@ -92,7 +100,7 @@ _DASHBOARD_HTML = """<!doctype html>
       <div class="body"></div>
     </section>
     <section class="block" id="card-docker-images">
-      <div class="row"><span class="label">unused images</span><span class="lead"></span><span class="count">\u2013</span></div>
+      <div class="row"><span class="label">unused images</span><span class="lead"></span><span class="count">\u2013</span><button class="action danger" id="act-prune-images" type="button" hidden>delete unused</button></div>
       <div class="body"></div>
     </section>
 
@@ -101,12 +109,13 @@ _DASHBOARD_HTML = """<!doctype html>
 
   <script>
     var REFRESH_MS = 30000;
+    var LINKS = __LINKS_JSON__;
     var cards = [
       { id: "card-monitors", key: "uptime_kuma", list: "down_monitors", empty: "All monitors up" },
       { id: "card-containers", key: "docker_containers", list: "stopped_containers", empty: "All containers running" },
-      { id: "card-updates", key: "docker_updater", list: "pending_images", empty: "Everything up to date" },
+      { id: "card-updates", key: "docker_updater", list: "pending_images", empty: "Everything up to date", action: "act-update-all" },
       { id: "card-docker-monitors", key: "docker_monitors", list: "unmonitored_containers", empty: "All containers monitored" },
-      { id: "card-docker-images", key: "docker_images", list: "unused_images", empty: "No unused images" }
+      { id: "card-docker-images", key: "docker_images", list: "unused_images", empty: "No unused images", action: "act-prune-images" }
     ];
     var btn = document.getElementById("refresh");
     var statusEl = document.getElementById("status");
@@ -122,6 +131,12 @@ _DASHBOARD_HTML = """<!doctype html>
       return '<div class="line ' + cls + '"><span class="mk">' + mk + "</span>" + escapeHtml(text) + "</div>";
     }
 
+    function setAction(cfg, visible) {
+      if (!cfg.action) return;
+      var b = document.getElementById(cfg.action);
+      if (b) b.hidden = !visible;
+    }
+
     function renderCard(cfg, check) {
       var el = document.getElementById(cfg.id);
       var count = el.querySelector(".count");
@@ -132,11 +147,13 @@ _DASHBOARD_HTML = """<!doctype html>
         el.classList.add("errored");
         count.textContent = "!";
         body.innerHTML = line("err", "\u00d7", check && check.error ? check.error : "unavailable");
+        setAction(cfg, false);
         return "error";
       }
 
       var items = Array.isArray(check[cfg.list]) ? check[cfg.list] : [];
       count.textContent = items.length;
+      setAction(cfg, items.length > 0);
       if (items.length === 0) {
         body.innerHTML = line("ok", "\u2022", cfg.empty);
         return "ok";
@@ -184,6 +201,58 @@ _DASHBOARD_HTML = """<!doctype html>
       });
     }
 
+    function initLinks() {
+      cards.forEach(function (cfg) {
+        var url = LINKS[cfg.id];
+        if (!url) return;
+        var label = document.getElementById(cfg.id).querySelector(".label");
+        var a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = label.textContent;
+        label.textContent = "";
+        label.appendChild(a);
+      });
+    }
+
+    function runAction(url, actBtn, confirmMsg, describe) {
+      if (!window.confirm(confirmMsg)) return;
+      actBtn.disabled = true;
+      var original = actBtn.textContent;
+      actBtn.textContent = "working\u2026";
+      fetch(url, { method: "POST", cache: "no-store" }).then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+      }).then(function (res) {
+        if (!res.ok || !res.data || res.data.status === "error") {
+          throw new Error(res.data && res.data.error ? res.data.error : "action failed");
+        }
+        document.getElementById("footer").textContent = describe(res.data);
+      }).catch(function (e) {
+        document.getElementById("footer").textContent = "action failed: " + e.message;
+      }).then(function () {
+        actBtn.disabled = false;
+        actBtn.textContent = original;
+        refresh();
+      });
+    }
+
+    var updateAllBtn = document.getElementById("act-update-all");
+    var pruneBtn = document.getElementById("act-prune-images");
+    updateAllBtn.addEventListener("click", function () {
+      runAction("/actions/update-all", updateAllBtn,
+        "Update all containers that have a pending update?",
+        function (d) { return "update triggered for " + (d.count || 0) + " container(s)"; });
+    });
+    pruneBtn.addEventListener("click", function () {
+      runAction("/actions/prune-images", pruneBtn,
+        "Delete all unused Docker images? This cannot be undone.",
+        function (d) {
+          return "removed " + (d.deleted || 0) + " image(s), freed " + (d.space_reclaimed_human || "0B");
+        });
+    });
+
+    initLinks();
     btn.addEventListener("click", refresh);
     refresh();
     setInterval(refresh, REFRESH_MS);
@@ -193,8 +262,28 @@ _DASHBOARD_HTML = """<!doctype html>
 """
 
 
+def _section_links() -> dict[str, str]:
+    """Browser-reachable URL for each dashboard section title (blank -> no link)."""
+    kuma = settings.uptime_kuma_public_url or settings.uptime_kuma_base_url
+    updater = settings.docker_updater_public_url or settings.docker_updater_base_url
+    return {
+        "card-monitors": kuma,
+        "card-containers": settings.portainer_url,
+        "card-updates": updater,
+        "card-docker-monitors": kuma,
+        "card-docker-images": settings.portainer_url,
+    }
+
+
+def _render_dashboard() -> str:
+    # json.dumps yields a valid JS object literal; neutralise any "</" so a URL
+    # cannot break out of the <script> element.
+    links = json.dumps(_section_links()).replace("</", "<\\/")
+    return _DASHBOARD_HTML.replace("__LINKS_JSON__", links)
+
+
 def register_dashboard_routes(app: Bottle) -> None:
     @app.get("/")
     def dashboard() -> str:
         response.content_type = "text/html; charset=utf-8"
-        return _DASHBOARD_HTML
+        return _render_dashboard()

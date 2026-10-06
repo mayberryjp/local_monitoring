@@ -17,6 +17,15 @@ def _image_label(image: Any) -> str:
     return str(tags[0]) if tags else str(image.short_id)
 
 
+def _human_size(num: float) -> str:
+    size = float(num or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{size:.0f}{unit}" if unit == "B" else f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{size:.1f}TB"
+
+
 def collect() -> dict[str, Any]:
     try:
         client = docker.DockerClient(base_url=settings.docker_host)
@@ -41,4 +50,31 @@ def collect() -> dict[str, Any]:
         "unused": len(unused_images),
         "total": len(images),
         "unused_images": unused_images,
+    }
+
+
+def prune_unused() -> dict[str, Any]:
+    """Remove every image not referenced by a container (Docker's ``prune -a``).
+
+    Uses Docker's own prune semantics (``dangling=False`` = all unused), so an image
+    still in use by any container is never removed — the operation can't break a
+    running service. Requires write access to the Docker socket.
+    """
+    try:
+        client = docker.DockerClient(base_url=settings.docker_host)
+    except DockerException as exc:
+        raise CheckError("docker_unreachable", "docker socket unavailable", str(exc)) from exc
+    try:
+        result = client.images.prune(filters={"dangling": False})
+    except DockerException as exc:
+        raise CheckError("docker_unreachable", "docker image prune failed", str(exc)) from exc
+    finally:
+        client.close()
+
+    reclaimed = int(result.get("SpaceReclaimed") or 0)
+    deleted = sum(1 for entry in (result.get("ImagesDeleted") or []) if entry.get("Deleted"))
+    return {
+        "deleted": deleted,
+        "space_reclaimed": reclaimed,
+        "space_reclaimed_human": _human_size(reclaimed),
     }

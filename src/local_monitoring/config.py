@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # Docker socket for the running/stopped container count.
     docker_host: str = Field("unix:///var/run/docker.sock", validation_alias="DOCKER_HOST")
 
+    # Browser-reachable URLs for the dashboard's section-title links. These are the
+    # public endpoints a remote client can open, distinct from the internal base URLs
+    # used for server-to-server calls. Blank -> the title renders as plain text.
+    uptime_kuma_public_url: str = Field("", validation_alias="UPTIME_KUMA_PUBLIC_URL")
+    portainer_url: str = Field("", validation_alias="PORTAINER_URL")
+    docker_updater_public_url: str = Field("", validation_alias="DOCKER_UPDATER_PUBLIC_URL")
+
     # Per-site container list(s) -> Uptime Kuma v2 docker-monitor coverage.
     # CONTAINER_BLOB may be a single URL or a comma-separated list that is merged.
     container_blob_url: str = Field("", validation_alias="CONTAINER_BLOB")

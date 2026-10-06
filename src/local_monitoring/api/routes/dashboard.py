@@ -216,8 +216,7 @@ _DASHBOARD_HTML = """<!doctype html>
       });
     }
 
-    function runAction(url, actBtn, confirmMsg, describe) {
-      if (!window.confirm(confirmMsg)) return;
+    function runAction(url, actBtn, describe) {
       actBtn.disabled = true;
       var original = actBtn.textContent;
       actBtn.textContent = "working\u2026";
@@ -241,12 +240,10 @@ _DASHBOARD_HTML = """<!doctype html>
     var pruneBtn = document.getElementById("act-prune-images");
     updateAllBtn.addEventListener("click", function () {
       runAction("/actions/update-all", updateAllBtn,
-        "Update all containers that have a pending update?",
         function (d) { return "update triggered for " + (d.count || 0) + " container(s)"; });
     });
     pruneBtn.addEventListener("click", function () {
       runAction("/actions/prune-images", pruneBtn,
-        "Delete all unused Docker images? This cannot be undone.",
         function (d) {
           return "removed " + (d.deleted || 0) + " image(s), freed " + (d.space_reclaimed_human || "0B");
         });

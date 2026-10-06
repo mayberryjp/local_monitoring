@@ -11,6 +11,7 @@ from webtest import TestApp
 
 from local_monitoring.domain import (
     additional_monitors,
+    allowlist,
     docker_containers,
     docker_images,
     docker_monitors,
@@ -42,6 +43,7 @@ def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(docker_monitors, "collect", lambda: {"monitored": 6, "unmonitored": 1})
     monkeypatch.setattr(ping_monitors, "collect", lambda: {"monitored": 3, "unmonitored": 0})
     monkeypatch.setattr(additional_monitors, "collect", lambda: {"additional": 2})
+    monkeypatch.setattr(allowlist, "collect", lambda: {"unmatched": 1})
     monkeypatch.setattr(docker_images, "collect", lambda: {"unused": 2, "total": 25})
 
     resp = client.get("/summary")
@@ -56,6 +58,7 @@ def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatc
         "docker_monitors",
         "ping_monitors",
         "additional_monitors",
+        "allowlist",
         "docker_images",
     }
     assert checks["uptime_kuma"] == {"status": "ok", "up": 2, "down": 1, "total": 3}
@@ -77,6 +80,7 @@ def test_summary_reports_partial_failure(
     monkeypatch.setattr(docker_monitors, "collect", lambda: {"monitored": 1, "unmonitored": 0})
     monkeypatch.setattr(ping_monitors, "collect", lambda: {"monitored": 1, "unmonitored": 0})
     monkeypatch.setattr(additional_monitors, "collect", lambda: {"additional": 0})
+    monkeypatch.setattr(allowlist, "collect", lambda: {"unmatched": 0})
     monkeypatch.setattr(docker_images, "collect", lambda: {"unused": 0, "total": 10})
 
     resp = client.get("/summary")
@@ -641,3 +645,112 @@ def test_action_missing_field_returns_400(client: TestApp) -> None:
     resp = client.post_json("/actions/update", {}, expect_errors=True)
     assert resp.status_code == 400
     assert resp.json["code"] == "invalid_request"
+
+
+def test_additional_monitors_delete_removes_additional(monkeypatch: pytest.MonkeyPatch) -> None:
+    monitors = {
+        "monitors": [
+            {"id": 1, "name": "AZURE CONTAINER CADDY", "type": "docker"},
+            {"id": 9, "name": "HOME HTTP ROUTERUI", "type": "http"},
+        ],
+        "count": 2,
+    }
+    deleted: dict[str, Any] = {}
+
+    def fake_delete(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        deleted["url"] = url
+        deleted["headers"] = k.get("headers")
+        return _FakeResponse(200, {"ok": True, "msg": "Deleted Successfully."})
+
+    monkeypatch.setattr(
+        additional_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(additional_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(additional_monitors.settings, "container_blob_url", "")
+    monkeypatch.setattr(additional_monitors.settings, "sando_devices_url", "")
+    monkeypatch.setattr(additional_monitors.settings, "allowed_additional_monitors", "caddy")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, monitors))
+    monkeypatch.setattr(requests, "delete", fake_delete)
+
+    # caddy is whitelisted, so only the uncovered http monitor is additional/deletable.
+    assert additional_monitors.delete_monitor("HOME HTTP ROUTERUI") == {
+        "deleted": "HOME HTTP ROUTERUI",
+        "monitor_id": 9,
+    }
+    assert deleted["url"] == "http://kuma-v2:12000/v1/monitors/9"
+    assert deleted["headers"] == {"X-API-Key": "secret"}
+
+
+def test_additional_monitors_delete_rejects_non_additional(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monitors = {
+        "monitors": [{"id": 1, "name": "AZURE CONTAINER CADDY", "type": "docker"}],
+        "count": 1,
+    }
+    monkeypatch.setattr(
+        additional_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(additional_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(additional_monitors.settings, "container_blob_url", "")
+    monkeypatch.setattr(additional_monitors.settings, "sando_devices_url", "")
+    monkeypatch.setattr(additional_monitors.settings, "allowed_additional_monitors", "caddy")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, monitors))
+
+    # caddy is whitelisted (not additional), so it cannot be deleted via this action.
+    with pytest.raises(CheckError) as excinfo:
+        additional_monitors.delete_monitor("AZURE CONTAINER CADDY")
+    assert excinfo.value.code == "not_found"
+
+
+def test_allowlist_flags_unmatched_entries(monkeypatch: pytest.MonkeyPatch) -> None:
+    monitors = {
+        "monitors": [
+            {"id": 1, "name": "AZURE CONTAINER CADDY", "type": "docker"},
+            {"id": 2, "name": "OFFICE PING NETGEARSWITCH", "type": "ping"},
+        ],
+        "count": 2,
+    }
+    monkeypatch.setattr(allowlist.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000")
+    monkeypatch.setattr(allowlist.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(
+        allowlist.settings, "allowed_additional_monitors", "caddy, ghost, netgear"
+    )
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, monitors))
+
+    # "caddy" and "netgear" appear in a monitor name; "ghost" matches nothing -> warn.
+    assert allowlist.collect() == {
+        "allowed": 3,
+        "unmatched": 1,
+        "unmatched_allowed": ["ghost"],
+    }
+
+
+def test_allowlist_empty_skips_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*a: Any, **k: Any) -> _FakeResponse:
+        raise AssertionError("allowlist must not fetch monitors when the whitelist is empty")
+
+    monkeypatch.setattr(allowlist.settings, "allowed_additional_monitors", "")
+    monkeypatch.setattr(allowlist.settings, "uptime_kuma_v2_api_base_url", "")
+    monkeypatch.setattr(requests, "get", boom)
+    assert allowlist.collect() == {"allowed": 0, "unmatched": 0, "unmatched_allowed": []}
+
+
+def test_allowlist_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        allowlist,
+        "collect",
+        lambda: {"allowed": 2, "unmatched": 1, "unmatched_allowed": ["ghost"]},
+    )
+    resp = client.get("/allowlist")
+    assert resp.status_code == 200
+    assert resp.json["unmatched_allowed"] == ["ghost"]
+
+
+def test_action_delete_monitor_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        additional_monitors, "delete_monitor", lambda name: {"deleted": name, "monitor_id": 9}
+    )
+    resp = client.post_json("/actions/delete-monitor", {"name": "HOME HTTP ROUTERUI"})
+    assert resp.status_code == 200
+    assert resp.json == {"status": "ok", "deleted": "HOME HTTP ROUTERUI", "monitor_id": 9}

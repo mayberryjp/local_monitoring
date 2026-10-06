@@ -7,7 +7,12 @@ from typing import Any
 
 from bottle import Bottle, request, response
 
-from local_monitoring.domain import docker_images, docker_updater, ping_monitors
+from local_monitoring.domain import (
+    additional_monitors,
+    docker_images,
+    docker_updater,
+    ping_monitors,
+)
 from local_monitoring.domain.errors import CheckError
 
 Action = Callable[[], dict[str, Any]]
@@ -64,3 +69,10 @@ def register_action_routes(app: Bottle) -> None:
         if not device:
             return _missing("device")
         return _run(lambda: ping_monitors.add_ping_monitor(device))
+
+    @app.post("/actions/delete-monitor")
+    def delete_monitor() -> dict[str, Any]:
+        name = _target("name")
+        if not name:
+            return _missing("name")
+        return _run(lambda: additional_monitors.delete_monitor(name))

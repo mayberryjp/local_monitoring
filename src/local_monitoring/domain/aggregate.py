@@ -9,6 +9,7 @@ from typing import Any
 
 from local_monitoring.domain import (
     additional_monitors,
+    allowlist,
     docker_containers,
     docker_images,
     docker_monitors,
@@ -31,6 +32,7 @@ CHECK_MODULES: dict[str, ModuleType] = {
     "docker_monitors": docker_monitors,
     "ping_monitors": ping_monitors,
     "additional_monitors": additional_monitors,
+    "allowlist": allowlist,
     "docker_images": docker_images,
 }
 

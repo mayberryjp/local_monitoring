@@ -5,7 +5,7 @@ high-bandwidth monitoring APIs and reduces each one to a tiny JSON response, so 
 remote/low-bandwidth client can poll a single small endpoint instead of several
 large ones.
 
-All eight downstream requests are issued **in parallel** (thread pool, not asyncio)
+All nine downstream requests are issued **in parallel** (thread pool, not asyncio)
 when the aggregate endpoint is called.
 
 ## Checks
@@ -19,6 +19,7 @@ when the aggregate endpoint is called.
 | `docker_monitors` | A per-site container list vs. [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api) `docker` monitors | `{"monitored": N, "unmonitored": M, "total": T, "unmonitored_containers": [name, ...]}` |
 | `ping_monitors` | A per-site device list vs. [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api) `ping` monitors | `{"monitored": N, "unmonitored": M, "total": T, "unmonitored_devices": [name, ...]}` |
 | `additional_monitors` | Uptime Kuma v2 monitors not matched by the container or ping checks (minus a whitelist) | `{"additional": N, "allowed": W, "total": T, "additional_monitors": [name, ...]}` |
+| `allowlist` | `ALLOWED_ADDITIONAL_MONITORS` entries that match no monitor name (stale whitelist) | `{"allowed": W, "unmatched": N, "unmatched_allowed": [entry, ...]}` |
 | `docker_images` | The Docker socket (images unused by any container, plus dangling) | `{"unused": N, "total": T, "unused_images": [tag_or_id, ...]}` |
 
 ## Endpoints
@@ -28,7 +29,7 @@ when the aggregate endpoint is called.
 | `GET` | `/` | HTML status page rendering the down monitors, stopped containers, pending updates, unmonitored containers, and unused images. |
 | `GET` | `/health` | Process liveness. |
 | `GET` | `/ready` | Readiness (always ok — downstreams are checked per request). |
-| `GET` | `/summary` | All eight checks in one object, run in parallel. |
+| `GET` | `/summary` | All nine checks in one object, run in parallel. |
 | `GET` | `/uptime-kuma` | Uptime Kuma up/down counter. |
 | `GET` | `/webdav` | WebDAV file freshness. |
 | `GET` | `/docker-updater` | docker-updater pending-update count. |
@@ -36,12 +37,14 @@ when the aggregate endpoint is called.
 | `GET` | `/docker-monitors` | Containers missing an Uptime Kuma v2 docker monitor. |
 | `GET` | `/ping-monitors` | Devices missing an Uptime Kuma v2 ping monitor. |
 | `GET` | `/additional-monitors` | Monitors not covered by the container or ping checks. |
+| `GET` | `/allowlist` | `ALLOWED_ADDITIONAL_MONITORS` entries matching no monitor. |
 | `GET` | `/docker-images` | Unused/dangling image count. |
 | `POST` | `/actions/update-all` | Trigger a docker-updater update for every container with a pending update. |
 | `POST` | `/actions/update` | Trigger a docker-updater update for one container (JSON body `{"name": ...}`). |
 | `POST` | `/actions/prune-images` | Delete every image not used by a container (Docker `prune -a`). |
 | `POST` | `/actions/delete-image` | Delete one unused image (JSON body `{"image": ...}`). |
 | `POST` | `/actions/add-ping-monitor` | Create an Uptime Kuma v2 ping monitor for one device (JSON body `{"device": ...}`). |
+| `POST` | `/actions/delete-monitor` | Delete one additional Uptime Kuma v2 monitor (JSON body `{"name": ...}`). |
 
 `/summary` always returns `200`; a failing check appears as an error object under its
 key. Individual check endpoints return `503` with a JSON error envelope when their
@@ -60,6 +63,7 @@ Example `/summary`:
     "docker_monitors": {"status": "ok", "monitored": 6, "unmonitored": 1, "total": 7, "unmonitored_containers": ["homeassistant"]},
     "ping_monitors": {"status": "ok", "monitored": 4, "unmonitored": 1, "total": 5, "unmonitored_devices": ["printer"]},
     "additional_monitors": {"status": "ok", "additional": 1, "allowed": 2, "total": 14, "additional_monitors": ["GARAGE HTTP DOORUI"]},
+    "allowlist": {"status": "ok", "allowed": 2, "unmatched": 1, "unmatched_allowed": ["old-nas"]},
     "docker_images": {"status": "ok", "unused": 2, "total": 25, "unused_images": ["redis:7", "sha256:0a1b2c3d4e5f"]}
   }
 }
@@ -98,8 +102,9 @@ The dashboard is a dark "actions dashboard": a single table with **Monitor type*
 hidden. Every row's action cell links to the relevant web UI (reusing the section URLs
 above), and actionable rows carry a singular button: **add monitor** (create a ping
 monitor for an uncovered device), **update** (a docker-updater update for one container),
-and **delete image** (remove one unused image). These are unauthenticated `POST` actions,
-so only expose this service on a trusted network.
+**delete image** (remove one unused image), and **delete monitor** (remove an unexpected
+Uptime Kuma monitor). These are unauthenticated `POST` actions, so only expose this
+service on a trusted network.
 
 The Docker check reads the mounted socket, and the **delete image** action writes to it
 (image remove), so the socket is mounted read-write. The image runs as a non-root user,

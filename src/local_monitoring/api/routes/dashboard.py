@@ -105,7 +105,10 @@ _DASHBOARD_HTML = """<!doctype html>
       { type: "Container monitor", key: "docker_monitors", list: "unmonitored_containers",
         link: "kuma", note: "no docker monitor" },
       { type: "Additional", key: "additional_monitors", list: "additional_monitors",
-        link: "kuma", note: "unexpected monitor" },
+        link: "kuma", note: "unexpected monitor",
+        action: { url: "/actions/delete-monitor", label: "delete monitor", field: "name", danger: true } },
+      { type: "Allowlist", key: "allowlist", list: "unmatched_allowed", link: "kuma",
+        note: "matches no monitor" },
       { type: "Container", key: "docker_containers", list: "stopped_containers",
         link: "portainer", note: "stopped" },
       { type: "Update", key: "docker_updater", list: "pending_containers", link: "updater",
@@ -200,6 +203,7 @@ _DASHBOARD_HTML = """<!doctype html>
 
     function describeAction(url, target, d) {
       if (url.indexOf("add-ping-monitor") >= 0) return "created monitor " + (d.created || target);
+      if (url.indexOf("delete-monitor") >= 0) return "deleted monitor " + (d.deleted || target);
       if (url.indexOf("delete-image") >= 0) return "removed image " + (d.removed || target);
       if (url.indexOf("update") >= 0) return "update triggered for " + (d.triggered || target);
       return "done";

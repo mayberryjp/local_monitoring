@@ -9,6 +9,7 @@ from bottle import Bottle, response
 
 from local_monitoring.domain import (
     additional_monitors,
+    allowlist,
     docker_containers,
     docker_images,
     docker_monitors,
@@ -66,6 +67,10 @@ def register_check_routes(app: Bottle) -> None:
     @app.get("/additional-monitors")
     def additional_monitors_check() -> dict[str, Any]:
         return _run(additional_monitors.collect)
+
+    @app.get("/allowlist")
+    def allowlist_check() -> dict[str, Any]:
+        return _run(allowlist.collect)
 
     @app.get("/docker-images")
     def docker_images_check() -> dict[str, Any]:

@@ -43,5 +43,15 @@ class Settings(BaseSettings):
     uptime_kuma_v2_api_base_url: str = Field("", validation_alias="UPTIME_KUMA_V2_API_BASE_URL")
     uptime_kuma_v2_api_key: str = Field("", validation_alias="UPTIME_KUMA_V2_API_KEY")
 
+    # Per-site device list -> Uptime Kuma v2 ping-monitor coverage. SANDO_DEVICES_URL
+    # lines are ``ip_address,domain_name,interval`` (same shape as CONTAINER_BLOB); a
+    # device is the first DNS label of the 2nd field.
+    sando_devices_url: str = Field("", validation_alias="SANDO_DEVICES_URL")
+
+    # Uptime Kuma monitors deliberately not tied to a container or device. A
+    # comma-separated list of monitor names (or last-word tokens) to exclude from the
+    # "additional monitors" check.
+    allowed_additional_monitors: str = Field("", validation_alias="ALLOWED_ADDITIONAL_MONITORS")
+
 
 settings = Settings()

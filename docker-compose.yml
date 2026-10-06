@@ -30,6 +30,17 @@ services:
       UPTIME_KUMA_V2_API_BASE_URL: http://uptimekuma-v2-api.azure.mayberry.farm:12000
       UPTIME_KUMA_V2_API_KEY: ""
 
+      # 6) Per-site device list -> Uptime Kuma v2 ping-monitor coverage. Lines are
+      # "ip_address,domain_name,interval" (same shape as CONTAINER_BLOB); a device is
+      # the first DNS label of the 2nd field. netgearswitch.office.mayberry.farm is
+      # covered by a ping monitor named like "OFFICE PING NETGEARSWITCH".
+      SANDO_DEVICES_URL: ""
+
+      # 7) Uptime Kuma monitors deliberately not tied to a container or device.
+      # Comma-separated monitor names (or last-word tokens) to treat as expected so
+      # they drop out of the "additional monitors" list.
+      ALLOWED_ADDITIONAL_MONITORS: ""
+
       # Browser-reachable URLs for the dashboard's section-title links. These are
       # the public web UIs a remote client opens, not the internal base URLs above.
       # Leave blank to render the title as plain text instead of a link.

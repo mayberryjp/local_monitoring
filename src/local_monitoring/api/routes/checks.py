@@ -8,10 +8,12 @@ from typing import Any
 from bottle import Bottle, response
 
 from local_monitoring.domain import (
+    additional_monitors,
     docker_containers,
     docker_images,
     docker_monitors,
     docker_updater,
+    ping_monitors,
     uptime_kuma,
     webdav,
 )
@@ -56,6 +58,14 @@ def register_check_routes(app: Bottle) -> None:
     @app.get("/docker-monitors")
     def docker_monitors_check() -> dict[str, Any]:
         return _run(docker_monitors.collect)
+
+    @app.get("/ping-monitors")
+    def ping_monitors_check() -> dict[str, Any]:
+        return _run(ping_monitors.collect)
+
+    @app.get("/additional-monitors")
+    def additional_monitors_check() -> dict[str, Any]:
+        return _run(additional_monitors.collect)
 
     @app.get("/docker-images")
     def docker_images_check() -> dict[str, Any]:

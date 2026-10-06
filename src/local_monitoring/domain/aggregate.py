@@ -8,10 +8,12 @@ from types import ModuleType
 from typing import Any
 
 from local_monitoring.domain import (
+    additional_monitors,
     docker_containers,
     docker_images,
     docker_monitors,
     docker_updater,
+    ping_monitors,
     uptime_kuma,
     webdav,
 )
@@ -27,6 +29,8 @@ CHECK_MODULES: dict[str, ModuleType] = {
     "docker_updater": docker_updater,
     "docker_containers": docker_containers,
     "docker_monitors": docker_monitors,
+    "ping_monitors": ping_monitors,
+    "additional_monitors": additional_monitors,
     "docker_images": docker_images,
 }
 

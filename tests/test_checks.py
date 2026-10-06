@@ -10,10 +10,12 @@ import requests
 from webtest import TestApp
 
 from local_monitoring.domain import (
+    additional_monitors,
     docker_containers,
     docker_images,
     docker_monitors,
     docker_updater,
+    ping_monitors,
     uptime_kuma,
     webdav,
 )
@@ -38,6 +40,8 @@ def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatc
         docker_containers, "collect", lambda: {"running": 5, "stopped": 2, "total": 7}
     )
     monkeypatch.setattr(docker_monitors, "collect", lambda: {"monitored": 6, "unmonitored": 1})
+    monkeypatch.setattr(ping_monitors, "collect", lambda: {"monitored": 3, "unmonitored": 0})
+    monkeypatch.setattr(additional_monitors, "collect", lambda: {"additional": 2})
     monkeypatch.setattr(docker_images, "collect", lambda: {"unused": 2, "total": 25})
 
     resp = client.get("/summary")
@@ -50,6 +54,8 @@ def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatc
         "docker_updater",
         "docker_containers",
         "docker_monitors",
+        "ping_monitors",
+        "additional_monitors",
         "docker_images",
     }
     assert checks["uptime_kuma"] == {"status": "ok", "up": 2, "down": 1, "total": 3}
@@ -69,6 +75,8 @@ def test_summary_reports_partial_failure(
         docker_containers, "collect", lambda: {"running": 1, "stopped": 0, "total": 1}
     )
     monkeypatch.setattr(docker_monitors, "collect", lambda: {"monitored": 1, "unmonitored": 0})
+    monkeypatch.setattr(ping_monitors, "collect", lambda: {"monitored": 1, "unmonitored": 0})
+    monkeypatch.setattr(additional_monitors, "collect", lambda: {"additional": 0})
     monkeypatch.setattr(docker_images, "collect", lambda: {"unused": 0, "total": 10})
 
     resp = client.get("/summary")
@@ -136,6 +144,10 @@ def test_docker_updater_counts_pending(monkeypatch: pytest.MonkeyPatch) -> None:
     assert docker_updater.collect() == {
         "pending_updates": 2,
         "pending_images": ["nginx:latest", "ghcr.io/owner/app:main"],
+        "pending_containers": [
+            {"name": None, "image": "nginx:latest"},
+            {"name": None, "image": "ghcr.io/owner/app:main"},
+        ],
     }
 
 
@@ -332,3 +344,274 @@ def test_action_error_returns_503(client: TestApp, monkeypatch: pytest.MonkeyPat
     assert resp.status_code == 503
     assert resp.json["status"] == "error"
     assert resp.json["code"] == "not_configured"
+
+
+def test_ping_monitors_flags_uncovered_devices(monkeypatch: pytest.MonkeyPatch) -> None:
+    blob = (
+        "# comment line\n"
+        "10.0.1.5,netgearswitch.office.mayberry.farm,86400\n"
+        "10.0.1.6,printer.office.mayberry.farm,86400\n"
+        "10.0.1.7,router.home.mayberry.farm,86400\n"
+    )
+    monitors = {
+        "monitors": [
+            {"id": 1, "name": "OFFICE PING NETGEARSWITCH", "type": "ping"},
+            {"id": 2, "name": "HOME PING ROUTER", "type": "http"},
+            {"id": 3, "name": "OFFICE PING PRINTERLABEL", "type": "ping"},
+        ],
+        "count": 3,
+    }
+
+    def fake_get(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        return _FakeResponse(200, monitors if "/v1/monitors" in url else None, text=blob)
+
+    monkeypatch.setattr(ping_monitors.settings, "sando_devices_url", "http://blob/devices")
+    monkeypatch.setattr(
+        ping_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(ping_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    # netgearswitch has a ping monitor (last token matches); router's monitor is http
+    # (not ping); "printer" must NOT match "PRINTERLABEL" (last-token whole-word).
+    assert ping_monitors.collect() == {
+        "monitored": 1,
+        "unmonitored": 2,
+        "total": 3,
+        "unmonitored_devices": ["printer", "router"],
+    }
+
+
+def test_ping_monitors_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ping_monitors.settings, "sando_devices_url", "")
+    monkeypatch.setattr(ping_monitors.settings, "uptime_kuma_v2_api_base_url", "")
+    with pytest.raises(CheckError) as excinfo:
+        ping_monitors.collect()
+    assert excinfo.value.code == "not_configured"
+
+
+def test_add_ping_monitor_creates_from_sando(monkeypatch: pytest.MonkeyPatch) -> None:
+    blob = "10.0.1.5,netgearswitch.office.mayberry.farm,600\n"
+    posted: dict[str, Any] = {}
+
+    def fake_post(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        posted["url"] = url
+        posted["json"] = k.get("json")
+        posted["headers"] = k.get("headers")
+        return _FakeResponse(200, {"ok": True, "monitorID": 7, "msg": "successAdded"})
+
+    monkeypatch.setattr(ping_monitors.settings, "sando_devices_url", "http://blob/devices")
+    monkeypatch.setattr(
+        ping_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(ping_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, text=blob))
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    # name is built from the SANDO record (site + PING + device), not the caller input.
+    assert ping_monitors.add_ping_monitor("NetgearSwitch") == {
+        "created": "OFFICE PING NETGEARSWITCH",
+        "monitor_id": 7,
+        "hostname": "10.0.1.5",
+    }
+    assert posted["url"] == "http://kuma-v2:12000/v1/monitors"
+    assert posted["json"] == {
+        "type": "ping",
+        "name": "OFFICE PING NETGEARSWITCH",
+        "hostname": "10.0.1.5",
+        "interval": 600,
+    }
+    assert posted["headers"] == {"X-API-Key": "secret"}
+
+
+def test_add_ping_monitor_rejects_unknown_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ping_monitors.settings, "sando_devices_url", "http://blob/devices")
+    monkeypatch.setattr(
+        ping_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(
+        requests, "get", lambda *a, **k: _FakeResponse(200, text="10.0.1.5,known.office.farm,86400\n")
+    )
+    with pytest.raises(CheckError) as excinfo:
+        ping_monitors.add_ping_monitor("unknown")
+    assert excinfo.value.code == "not_found"
+
+
+def test_additional_monitors_lists_uncovered(monkeypatch: pytest.MonkeyPatch) -> None:
+    container_blob = "docker.site,caddy.azure.farm,86400\n"
+    device_blob = "10.0.1.5,netgearswitch.office.farm,86400\n"
+    monitors = {
+        "monitors": [
+            {"id": 1, "name": "AZURE CONTAINER CADDY", "type": "docker"},
+            {"id": 2, "name": "OFFICE PING NETGEARSWITCH", "type": "ping"},
+            {"id": 3, "name": "HOME HTTP ROUTERUI", "type": "http"},
+            {"id": 4, "name": "OFFICE PING ORPHAN", "type": "ping"},
+            {"id": 5, "name": "WHITELISTED THING", "type": "http"},
+        ],
+        "count": 5,
+    }
+
+    def fake_get(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        if "/v1/monitors" in url:
+            return _FakeResponse(200, monitors)
+        return _FakeResponse(200, text=device_blob if "devices" in url else container_blob)
+
+    monkeypatch.setattr(
+        additional_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(additional_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(additional_monitors.settings, "container_blob_url", "http://blob/containers")
+    monkeypatch.setattr(additional_monitors.settings, "sando_devices_url", "http://blob/devices")
+    monkeypatch.setattr(
+        additional_monitors.settings, "allowed_additional_monitors", "WHITELISTED THING"
+    )
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    # caddy (docker) and netgearswitch (ping) are covered; the http monitor and the
+    # orphan ping monitor are additional; the whitelisted monitor is excluded by name.
+    assert additional_monitors.collect() == {
+        "additional": 2,
+        "allowed": 1,
+        "total": 5,
+        "additional_monitors": ["HOME HTTP ROUTERUI", "OFFICE PING ORPHAN"],
+    }
+
+
+def test_additional_monitors_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(additional_monitors.settings, "uptime_kuma_v2_api_base_url", "")
+    with pytest.raises(CheckError) as excinfo:
+        additional_monitors.collect()
+    assert excinfo.value.code == "not_configured"
+
+
+def test_docker_updater_update_one_triggers_known(monkeypatch: pytest.MonkeyPatch) -> None:
+    status = {
+        "containers": [
+            {"name": "web", "status": "update", "image": "nginx:latest"},
+            {"name": "db", "status": "ok", "image": "postgres:16"},
+        ]
+    }
+    posted: list[str] = []
+
+    def fake_post(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        posted.append(url)
+        return _FakeResponse(200, {"ok": True})
+
+    monkeypatch.setattr(docker_updater.settings, "docker_updater_base_url", "http://du")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, status))
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    assert docker_updater.update_one("web") == {"triggered": "web"}
+    assert posted == ["http://du/api/update/web"]
+
+
+def test_docker_updater_update_one_rejects_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    status = {"containers": [{"name": "web", "status": "ok", "image": "nginx:latest"}]}
+    monkeypatch.setattr(docker_updater.settings, "docker_updater_base_url", "http://du")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, status))
+    with pytest.raises(CheckError) as excinfo:
+        docker_updater.update_one("web")
+    assert excinfo.value.code == "not_found"
+
+
+def test_docker_images_remove_image_removes_unused(monkeypatch: pytest.MonkeyPatch) -> None:
+    images = [
+        SimpleNamespace(id="sha256:aaa", tags=["nginx:latest"], short_id="sha256:aaaaaa"),
+        SimpleNamespace(id="sha256:bbb", tags=["redis:7"], short_id="sha256:bbbbbb"),
+    ]
+    containers = [SimpleNamespace(attrs={"Image": "sha256:aaa"})]
+    removed: dict[str, Any] = {}
+
+    def fake_remove(image: str, force: bool) -> None:
+        removed["image"] = image
+        removed["force"] = force
+
+    client = SimpleNamespace(
+        images=SimpleNamespace(list=lambda *a, **k: images, remove=fake_remove),
+        containers=SimpleNamespace(list=lambda *a, **k: containers),
+        close=lambda: None,
+    )
+    monkeypatch.setattr(docker_images.docker, "DockerClient", lambda *a, **k: client)
+
+    # redis is used by no container (unused), so it is removable with force=False.
+    assert docker_images.remove_image("redis:7") == {"removed": "redis:7"}
+    assert removed == {"image": "redis:7", "force": False}
+
+
+def test_docker_images_remove_image_rejects_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    images = [SimpleNamespace(id="sha256:aaa", tags=["nginx:latest"], short_id="sha256:aaaaaa")]
+    containers = [SimpleNamespace(attrs={"Image": "sha256:aaa"})]
+    client = SimpleNamespace(
+        images=SimpleNamespace(list=lambda *a, **k: images, remove=lambda **k: None),
+        containers=SimpleNamespace(list=lambda *a, **k: containers),
+        close=lambda: None,
+    )
+    monkeypatch.setattr(docker_images.docker, "DockerClient", lambda *a, **k: client)
+
+    with pytest.raises(CheckError) as excinfo:
+        docker_images.remove_image("nginx:latest")
+    assert excinfo.value.code == "not_found"
+
+
+def test_ping_monitors_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        ping_monitors,
+        "collect",
+        lambda: {"monitored": 1, "unmonitored": 1, "total": 2, "unmonitored_devices": ["printer"]},
+    )
+    resp = client.get("/ping-monitors")
+    assert resp.status_code == 200
+    assert resp.json == {
+        "status": "ok",
+        "monitored": 1,
+        "unmonitored": 1,
+        "total": 2,
+        "unmonitored_devices": ["printer"],
+    }
+
+
+def test_additional_monitors_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        additional_monitors,
+        "collect",
+        lambda: {"additional": 1, "allowed": 0, "total": 4, "additional_monitors": ["X"]},
+    )
+    resp = client.get("/additional-monitors")
+    assert resp.status_code == 200
+    assert resp.json["additional_monitors"] == ["X"]
+
+
+def test_action_add_ping_monitor_endpoint(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake(device: str) -> dict[str, Any]:
+        captured["device"] = device
+        return {"created": "OFFICE PING NETGEARSWITCH", "monitor_id": 7, "hostname": "10.0.1.5"}
+
+    monkeypatch.setattr(ping_monitors, "add_ping_monitor", fake)
+    resp = client.post_json("/actions/add-ping-monitor", {"device": "netgearswitch"})
+    assert resp.status_code == 200
+    assert resp.json["created"] == "OFFICE PING NETGEARSWITCH"
+    assert captured["device"] == "netgearswitch"
+
+
+def test_action_update_one_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(docker_updater, "update_one", lambda name: {"triggered": name})
+    resp = client.post_json("/actions/update", {"name": "web"})
+    assert resp.status_code == 200
+    assert resp.json == {"status": "ok", "triggered": "web"}
+
+
+def test_action_delete_image_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(docker_images, "remove_image", lambda image: {"removed": image})
+    resp = client.post_json("/actions/delete-image", {"image": "redis:7"})
+    assert resp.status_code == 200
+    assert resp.json == {"status": "ok", "removed": "redis:7"}
+
+
+def test_action_missing_field_returns_400(client: TestApp) -> None:
+    resp = client.post_json("/actions/update", {}, expect_errors=True)
+    assert resp.status_code == 400
+    assert resp.json["code"] == "invalid_request"

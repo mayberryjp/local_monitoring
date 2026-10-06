@@ -1,4 +1,4 @@
-"""Human-friendly HTML status page that renders the /summary issue lists."""
+"""Human-friendly dark "actions dashboard" that renders the /summary issue lists."""
 
 from __future__ import annotations
 
@@ -14,61 +14,63 @@ _DASHBOARD_HTML = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>Local Monitoring \u00b7 Status</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231d2021'/%3E%3Cpath d='M3 17h5l3-8 4 14 3-9 2 3h6' fill='none' stroke='%23a9b665' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<title>Local Monitoring \u00b7 Actions</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101013'/%3E%3Cpath d='M3 17h5l3-8 4 14 3-9 2 3h6' fill='none' stroke='%236ea8fe' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root {
-    --bg: #1d2021; --panel: #282828; --border: #3c3836;
-    --fg: #d4be98; --muted: #928374;
-    --ok: #a9b665; --warn: #d8a657; --bad: #ea6962; --accent: #89b482;
+    --bg: #09090b; --panel: #101013; --panel2: #17171c; --border: #26262d;
+    --fg: #ececf1; --muted: #8b8b95;
+    --ok: #34d399; --warn: #fbbf24; --bad: #f87171; --accent: #6ea8fe;
   }
   * { box-sizing: border-box; }
-  html { background: var(--bg); }
+  html, body { background: var(--bg); }
   body {
-    margin: 0; background: var(--bg); color: var(--fg);
-    font: 15px/1.6 ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    margin: 0; color: var(--fg);
+    font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 2.2rem 1.25rem 4rem; }
   header { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem;
-           flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: .8rem;
-           margin-bottom: 1.6rem; }
-  .title { font-size: 1.2rem; font-weight: 700; }
-  .title::before { content: "> "; color: var(--accent); }
-  .tag { color: var(--muted); font-size: .82rem; margin-top: .2rem; }
-  button { font: inherit; font-size: .82rem; color: var(--fg); background: transparent;
-           border: 1px solid var(--border); padding: .35rem .85rem; cursor: pointer; }
-  button:hover { border-color: var(--accent); color: var(--accent); }
+           flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: .9rem;
+           margin-bottom: 1.4rem; }
+  .title { font-size: 1.25rem; font-weight: 700; letter-spacing: .2px; }
+  .title::before { content: "\u258d"; color: var(--accent); margin-right: .4rem; }
+  .tag { color: var(--muted); font-size: .72rem; margin-top: .25rem; text-transform: uppercase;
+         letter-spacing: .16em; }
+  button { font: inherit; font-size: .8rem; color: var(--fg); background: var(--panel2);
+           border: 1px solid var(--border); border-radius: 6px; padding: .4rem .9rem;
+           cursor: pointer; transition: border-color .15s, color .15s; }
+  button:hover { border-color: var(--accent); color: #fff; }
   button:disabled { opacity: .5; cursor: default; }
-  button:disabled:hover { border-color: var(--border); color: var(--fg); }
-  button.action { font-size: .72rem; padding: .2rem .6rem; margin-left: .7rem; flex: 0 0 auto; }
-  button.action.danger:hover { border-color: var(--bad); color: var(--bad); }
-  .row .label a { color: inherit; text-decoration: none; border-bottom: 1px solid transparent; }
-  .row .label a:hover { color: var(--accent); border-bottom-color: var(--accent); }
-  .status { display: flex; align-items: center; gap: .7rem; margin-bottom: 2rem; font-weight: 700;
-            background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--muted);
-            padding: .7rem .9rem; }
-  .status .sw { flex: 0 0 auto; width: .8rem; height: .8rem; background: var(--muted); }
-  .status.ok { color: var(--ok); border-left-color: var(--ok); }
-  .status.ok .sw { background: var(--ok); }
-  .status.alert { color: var(--bad); border-left-color: var(--bad); }
-  .status.alert .sw { background: var(--bad); }
-  .block { margin: 0 0 1.7rem; }
-  .row { display: flex; align-items: baseline; gap: .6rem; }
-  .row .label { white-space: nowrap; font-weight: 700; }
-  .row .lead { flex: 1 1 auto; border-bottom: 1px dotted var(--border); transform: translateY(-.3em); }
-  .row .count { white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .block.issues .label, .block.issues .count { color: var(--warn); }
-  .block.errored .label, .block.errored .count { color: var(--bad); }
-  .body { margin-top: .45rem; }
-  .line { display: flex; gap: .7rem; padding: .12rem 0; word-break: break-all; }
-  .line .mk { flex: 0 0 1ch; text-align: center; font-weight: 700; }
-  .line.ok { color: var(--muted); }
-  .line.ok .mk { color: var(--ok); }
-  .line.bad .mk { color: var(--warn); }
-  .line.err { color: var(--bad); }
-  .line.err .mk { color: var(--bad); }
-  footer { margin-top: 2rem; border-top: 1px solid var(--border); padding-top: .8rem;
-           color: var(--muted); font-size: .8rem; }
+  .status { display: flex; align-items: center; gap: .65rem; margin-bottom: 1.4rem; font-weight: 600;
+            background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+            padding: .75rem .95rem; }
+  .status .dot { flex: 0 0 auto; width: .7rem; height: .7rem; border-radius: 50%; background: var(--muted); }
+  .status.ok { color: var(--ok); }
+  .status.ok .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(52,211,153,.14); }
+  .status.alert { color: var(--warn); }
+  .status.alert .dot { background: var(--warn); box-shadow: 0 0 0 3px rgba(251,191,36,.14); }
+  table { width: 100%; border-collapse: collapse; background: var(--panel);
+          border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  thead th { text-align: left; font-size: .68rem; text-transform: uppercase; letter-spacing: .13em;
+             color: var(--muted); font-weight: 600; padding: .7rem .95rem;
+             border-bottom: 1px solid var(--border); background: var(--panel2); }
+  tbody td { padding: .62rem .95rem; border-top: 1px solid var(--border); vertical-align: middle; }
+  tbody tr:first-child td { border-top: none; }
+  tbody tr:hover { background: var(--panel2); }
+  .type { white-space: nowrap; font-weight: 600; color: var(--accent); }
+  .issue { word-break: break-all; }
+  .issue .sub { color: var(--muted); }
+  .act { white-space: nowrap; text-align: right; }
+  .act .btn { font-size: .72rem; padding: .25rem .65rem; margin-left: .55rem; }
+  .act .btn.danger:hover { border-color: var(--bad); color: var(--bad); }
+  .act a.open { color: var(--muted); text-decoration: none; font-size: .74rem;
+                border-bottom: 1px solid transparent; }
+  .act a.open:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  tr.err .type, tr.err .issue { color: var(--bad); }
+  .allclear { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--ok);
+              border-radius: 10px; padding: 1.1rem; color: var(--ok); font-weight: 600; }
+  footer { margin-top: 1.6rem; border-top: 1px solid var(--border); padding-top: .8rem;
+           color: var(--muted); font-size: .78rem; }
 </style>
 </head>
 <body>
@@ -76,33 +78,18 @@ _DASHBOARD_HTML = """<!doctype html>
     <header>
       <div>
         <div class="title">local-monitoring</div>
-        <div class="tag">homelab status board</div>
+        <div class="tag">actions dashboard</div>
       </div>
       <button id="refresh" type="button">refresh</button>
     </header>
 
-    <div id="status" class="status"><span class="sw"></span><span id="status-text">loading\u2026</span></div>
+    <div id="status" class="status"><span class="dot"></span><span id="status-text">loading\u2026</span></div>
 
-    <section class="block" id="card-monitors">
-      <div class="row"><span class="label">down monitors</span><span class="lead"></span><span class="count">\u2013</span></div>
-      <div class="body"></div>
-    </section>
-    <section class="block" id="card-containers">
-      <div class="row"><span class="label">stopped containers</span><span class="lead"></span><span class="count">\u2013</span></div>
-      <div class="body"></div>
-    </section>
-    <section class="block" id="card-updates">
-      <div class="row"><span class="label">pending updates</span><span class="lead"></span><span class="count">\u2013</span><button class="action" id="act-update-all" type="button" hidden>update all</button></div>
-      <div class="body"></div>
-    </section>
-    <section class="block" id="card-docker-monitors">
-      <div class="row"><span class="label">unmonitored containers</span><span class="lead"></span><span class="count">\u2013</span></div>
-      <div class="body"></div>
-    </section>
-    <section class="block" id="card-docker-images">
-      <div class="row"><span class="label">unused images</span><span class="lead"></span><span class="count">\u2013</span><button class="action danger" id="act-prune-images" type="button" hidden>delete unused</button></div>
-      <div class="body"></div>
-    </section>
+    <table id="board" hidden>
+      <thead><tr><th>Monitor type</th><th>Issue</th><th>Action</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="allclear" class="allclear" hidden>\u2713 No issues \u2014 everything is healthy.</div>
 
     <footer id="footer">\u2014</footer>
   </div>
@@ -110,16 +97,33 @@ _DASHBOARD_HTML = """<!doctype html>
   <script>
     var REFRESH_MS = 30000;
     var LINKS = __LINKS_JSON__;
-    var cards = [
-      { id: "card-monitors", key: "uptime_kuma", list: "down_monitors", empty: "All monitors up" },
-      { id: "card-containers", key: "docker_containers", list: "stopped_containers", empty: "All containers running" },
-      { id: "card-updates", key: "docker_updater", list: "pending_images", empty: "Everything up to date", action: "act-update-all" },
-      { id: "card-docker-monitors", key: "docker_monitors", list: "unmonitored_containers", empty: "All containers monitored" },
-      { id: "card-docker-images", key: "docker_images", list: "unused_images", empty: "No unused images", action: "act-prune-images" }
+    var CARDS = [
+      { type: "Monitor", key: "uptime_kuma", list: "down_monitors", link: "kuma", note: "down" },
+      { type: "Ping", key: "ping_monitors", list: "unmonitored_devices", link: "kuma",
+        note: "no ping monitor",
+        action: { url: "/actions/add-ping-monitor", label: "add monitor", field: "device" } },
+      { type: "Container monitor", key: "docker_monitors", list: "unmonitored_containers",
+        link: "kuma", note: "no docker monitor" },
+      { type: "Additional", key: "additional_monitors", list: "additional_monitors",
+        link: "kuma", note: "unexpected monitor" },
+      { type: "Container", key: "docker_containers", list: "stopped_containers",
+        link: "portainer", note: "stopped" },
+      { type: "Update", key: "docker_updater", list: "pending_containers", link: "updater",
+        note: "update available",
+        action: { url: "/actions/update", label: "update", field: "name" },
+        map: function (i) { return { issue: i.image || i.name, target: i.name }; } },
+      { type: "Image", key: "docker_images", list: "unused_images", link: "portainer",
+        note: "unused",
+        action: { url: "/actions/delete-image", label: "delete image", field: "image", danger: true } }
     ];
-    var btn = document.getElementById("refresh");
+
+    var refreshBtn = document.getElementById("refresh");
     var statusEl = document.getElementById("status");
     var statusText = document.getElementById("status-text");
+    var board = document.getElementById("board");
+    var rowsEl = document.getElementById("rows");
+    var allclear = document.getElementById("allclear");
+    var footer = document.getElementById("footer");
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, function (c) {
@@ -127,130 +131,135 @@ _DASHBOARD_HTML = """<!doctype html>
       });
     }
 
-    function line(cls, mk, text) {
-      return '<div class="line ' + cls + '"><span class="mk">' + mk + "</span>" + escapeHtml(text) + "</div>";
+    function openLink(card) {
+      var url = LINKS[card.link];
+      if (!url) return "";
+      return ' <a class="open" href="' + escapeHtml(url) +
+        '" target="_blank" rel="noopener noreferrer">open \u2197</a>';
     }
 
-    function setAction(cfg, visible) {
-      if (!cfg.action) return;
-      var b = document.getElementById(cfg.action);
-      if (b) b.hidden = !visible;
-    }
-
-    function renderCard(cfg, check) {
-      var el = document.getElementById(cfg.id);
-      var count = el.querySelector(".count");
-      var body = el.querySelector(".body");
-      el.classList.remove("issues", "errored");
-
-      if (!check || check.status === "error") {
-        el.classList.add("errored");
-        count.textContent = "!";
-        body.innerHTML = line("err", "\u00d7", check && check.error ? check.error : "unavailable");
-        setAction(cfg, false);
-        return "error";
+    function rowHtml(card, item) {
+      var mapped = card.map ? card.map(item) : { issue: item, target: item };
+      var issue = escapeHtml(mapped.issue);
+      if (card.note) issue += ' <span class="sub">\u00b7 ' + escapeHtml(card.note) + "</span>";
+      var act = "";
+      if (card.action) {
+        var cls = "btn" + (card.action.danger ? " danger" : "");
+        act += '<button class="' + cls + '" data-url="' + card.action.url +
+          '" data-field="' + card.action.field +
+          '" data-target="' + encodeURIComponent(mapped.target) +
+          '" data-label="' + escapeHtml(card.action.label) + '">' +
+          escapeHtml(card.action.label) + "</button>";
       }
-
-      var items = Array.isArray(check[cfg.list]) ? check[cfg.list] : [];
-      count.textContent = items.length;
-      setAction(cfg, items.length > 0);
-      if (items.length === 0) {
-        body.innerHTML = line("ok", "\u2022", cfg.empty);
-        return "ok";
-      }
-      el.classList.add("issues");
-      body.innerHTML = items.map(function (i) {
-        return line("bad", "!", i);
-      }).join("");
-      return "issues";
+      act += openLink(card);
+      if (!act) act = '<span class="sub">\u2014</span>';
+      return '<tr><td class="type">' + escapeHtml(card.type) + '</td><td class="issue">' +
+        issue + '</td><td class="act">' + act + "</td></tr>";
     }
 
-    function refresh() {
-      if (btn.disabled) return;
-      btn.disabled = true;
-      btn.textContent = "refreshing\u2026";
-      fetch("/summary", { cache: "no-store" }).then(function (r) {
-        return r.json();
-      }).then(function (data) {
-        var checks = data.checks || {};
-        var issues = 0, errors = 0;
-        cards.forEach(function (cfg) {
-          var state = renderCard(cfg, checks[cfg.key]);
-          if (state === "issues") issues++;
-          if (state === "error") errors++;
-        });
-        if (issues === 0 && errors === 0) {
-          statusEl.className = "status ok";
-          statusText.textContent = "OK \u2014 all clear";
-        } else {
-          statusEl.className = "status alert";
-          var parts = [];
-          if (issues) parts.push(issues + " area" + (issues === 1 ? "" : "s") + " need attention");
-          if (errors) parts.push(errors + " check" + (errors === 1 ? "" : "s") + " unavailable");
-          statusText.textContent = "ATTENTION \u2014 " + parts.join(" \u00b7 ");
+    function errRowHtml(card, msg) {
+      var act = openLink(card) || '<span class="sub">\u2014</span>';
+      return '<tr class="err"><td class="type">' + escapeHtml(card.type) +
+        '</td><td class="issue">' + escapeHtml(msg) + '</td><td class="act">' + act + "</td></tr>";
+    }
+
+    function render(checks) {
+      var html = "";
+      var issues = 0, errors = 0;
+      CARDS.forEach(function (card) {
+        var check = checks[card.key];
+        if (!check) return;
+        if (check.status === "error") {
+          errors++;
+          html += errRowHtml(card, check.error || "unavailable");
+          return;
         }
-        document.getElementById("footer").textContent =
-          "updated " + new Date().toLocaleTimeString() + " \u00b7 auto every 30s";
-      }).catch(function (e) {
-        statusEl.className = "status alert";
-        statusText.textContent = "failed to load status";
-        document.getElementById("footer").textContent = String(e);
-      }).then(function () {
-        btn.disabled = false;
-        btn.textContent = "refresh";
+        var items = Array.isArray(check[card.list]) ? check[card.list] : [];
+        items.forEach(function (item) { issues++; html += rowHtml(card, item); });
       });
+      rowsEl.innerHTML = html;
+      var hasRows = (issues + errors) > 0;
+      board.hidden = !hasRows;
+      allclear.hidden = hasRows;
+      bindActions();
+      return { issues: issues, errors: errors };
     }
 
-    function initLinks() {
-      cards.forEach(function (cfg) {
-        var url = LINKS[cfg.id];
-        if (!url) return;
-        var label = document.getElementById(cfg.id).querySelector(".label");
-        var a = document.createElement("a");
-        a.href = url;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        a.textContent = label.textContent;
-        label.textContent = "";
-        label.appendChild(a);
-      });
+    function setStatus(res) {
+      if (res.issues === 0 && res.errors === 0) {
+        statusEl.className = "status ok";
+        statusText.textContent = "OK \u2014 all clear";
+        return;
+      }
+      statusEl.className = "status alert";
+      var parts = [];
+      if (res.issues) parts.push(res.issues + " issue" + (res.issues === 1 ? "" : "s"));
+      if (res.errors) parts.push(res.errors + " check" + (res.errors === 1 ? "" : "s") + " unavailable");
+      statusText.textContent = "ATTENTION \u2014 " + parts.join(" \u00b7 ");
     }
 
-    function runAction(url, actBtn, describe) {
-      actBtn.disabled = true;
-      var original = actBtn.textContent;
-      actBtn.textContent = "working\u2026";
-      fetch(url, { method: "POST", cache: "no-store" }).then(function (r) {
+    function describeAction(url, target, d) {
+      if (url.indexOf("add-ping-monitor") >= 0) return "created monitor " + (d.created || target);
+      if (url.indexOf("delete-image") >= 0) return "removed image " + (d.removed || target);
+      if (url.indexOf("update") >= 0) return "update triggered for " + (d.triggered || target);
+      return "done";
+    }
+
+    function runAction(b) {
+      b.disabled = true;
+      var label = b.getAttribute("data-label");
+      b.textContent = "working\u2026";
+      var url = b.getAttribute("data-url");
+      var field = b.getAttribute("data-field");
+      var target = decodeURIComponent(b.getAttribute("data-target"));
+      var payload = {};
+      if (field) payload[field] = target;
+      fetch(url, {
+        method: "POST", cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(function (r) {
         return r.json().then(function (d) { return { ok: r.ok, data: d }; });
       }).then(function (res) {
         if (!res.ok || !res.data || res.data.status === "error") {
           throw new Error(res.data && res.data.error ? res.data.error : "action failed");
         }
-        document.getElementById("footer").textContent = describe(res.data);
-      }).catch(function (e) {
-        document.getElementById("footer").textContent = "action failed: " + e.message;
-      }).then(function () {
-        actBtn.disabled = false;
-        actBtn.textContent = original;
+        footer.textContent = describeAction(url, target, res.data);
         refresh();
+      }).catch(function (e) {
+        footer.textContent = "action failed: " + e.message;
+        b.disabled = false;
+        b.textContent = label;
       });
     }
 
-    var updateAllBtn = document.getElementById("act-update-all");
-    var pruneBtn = document.getElementById("act-prune-images");
-    updateAllBtn.addEventListener("click", function () {
-      runAction("/actions/update-all", updateAllBtn,
-        function (d) { return "update triggered for " + (d.count || 0) + " container(s)"; });
-    });
-    pruneBtn.addEventListener("click", function () {
-      runAction("/actions/prune-images", pruneBtn,
-        function (d) {
-          return "removed " + (d.deleted || 0) + " image(s), freed " + (d.space_reclaimed_human || "0B");
-        });
-    });
+    function bindActions() {
+      var buttons = rowsEl.querySelectorAll(".act .btn");
+      buttons.forEach(function (b) {
+        b.addEventListener("click", function () { runAction(b); });
+      });
+    }
 
-    initLinks();
-    btn.addEventListener("click", refresh);
+    function refresh() {
+      if (refreshBtn.disabled) return;
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "refreshing\u2026";
+      fetch("/summary", { cache: "no-store" }).then(function (r) {
+        return r.json();
+      }).then(function (data) {
+        setStatus(render(data.checks || {}));
+        footer.textContent = "updated " + new Date().toLocaleTimeString() + " \u00b7 auto every 30s";
+      }).catch(function (e) {
+        statusEl.className = "status alert";
+        statusText.textContent = "failed to load status";
+        footer.textContent = String(e);
+      }).then(function () {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = "refresh";
+      });
+    }
+
+    refreshBtn.addEventListener("click", refresh);
     refresh();
     setInterval(refresh, REFRESH_MS);
   </script>
@@ -260,15 +269,11 @@ _DASHBOARD_HTML = """<!doctype html>
 
 
 def _section_links() -> dict[str, str]:
-    """Browser-reachable URL for each dashboard section title (blank -> no link)."""
-    kuma = settings.uptime_kuma_public_url or settings.uptime_kuma_base_url
-    updater = settings.docker_updater_public_url or settings.docker_updater_base_url
+    """Browser-reachable URL for each dashboard action link (blank -> no link)."""
     return {
-        "card-monitors": kuma,
-        "card-containers": settings.portainer_url,
-        "card-updates": updater,
-        "card-docker-monitors": kuma,
-        "card-docker-images": settings.portainer_url,
+        "kuma": settings.uptime_kuma_public_url or settings.uptime_kuma_base_url,
+        "portainer": settings.portainer_url,
+        "updater": settings.docker_updater_public_url or settings.docker_updater_base_url,
     }
 
 

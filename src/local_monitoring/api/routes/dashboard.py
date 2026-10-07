@@ -71,6 +71,23 @@ _DASHBOARD_HTML = """<!doctype html>
               border-radius: 10px; padding: 1.1rem; color: var(--ok); font-weight: 600; }
   footer { margin-top: 1.6rem; border-top: 1px solid var(--border); padding-top: .8rem;
            color: var(--muted); font-size: .78rem; }
+
+  /* Phones: the 3-column table can't fit, so stack each row into a card. */
+  @media (max-width: 640px) {
+    .wrap { padding: 1.4rem 1rem 3rem; }
+    header { margin-bottom: 1.1rem; }
+    thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    table { border: none; background: transparent; border-radius: 0; overflow: visible; }
+    tbody tr, tbody tr:hover { display: block; background: var(--panel); border: 1px solid var(--border);
+             border-radius: 10px; padding: .75rem .9rem; margin-bottom: .7rem; }
+    tbody td, tbody tr:first-child td { display: block; padding: 0; border: none; }
+    .type { margin-bottom: .25rem; }
+    .issue { white-space: normal; margin-bottom: .6rem; }
+    .act { text-align: left; white-space: normal; display: flex; flex-wrap: wrap;
+           align-items: center; gap: .5rem; }
+    .act .btn { margin-left: 0; }
+    .act a.open { margin-left: auto; }
+  }
 </style>
 </head>
 <body>

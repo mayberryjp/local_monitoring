@@ -45,7 +45,16 @@ def collect() -> dict[str, Any]:
     if resp.status_code != 200:
         raise CheckError("upstream_error", f"uptime-kuma returned HTTP {resp.status_code}")
 
-    heartbeats = resp.json().get("heartbeatList") or {}
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise CheckError("upstream_error", "uptime-kuma returned invalid JSON", str(exc)) from exc
+    if not isinstance(payload, dict):
+        raise CheckError("upstream_error", "uptime-kuma returned an unexpected response")
+
+    heartbeats = payload.get("heartbeatList") or {}
+    if not isinstance(heartbeats, dict):
+        raise CheckError("upstream_error", "uptime-kuma returned an invalid heartbeat list")
     up = 0
     total = 0
     down_ids: list[str] = []

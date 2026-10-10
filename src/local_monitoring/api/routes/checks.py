@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from bottle import Bottle, response
+from bottle import Bottle, request, response
 
 from local_monitoring.domain import (
     additional_monitors,
@@ -15,7 +15,9 @@ from local_monitoring.domain import (
     docker_monitors,
     docker_updater,
     ping_monitors,
+    portainer_stacks,
     uptime_kuma,
+    uptime_kuma_v2,
     webdav,
 )
 from local_monitoring.domain.aggregate import collect_all
@@ -59,6 +61,19 @@ def register_check_routes(app: Bottle) -> None:
     @app.get("/docker-monitors")
     def docker_monitors_check() -> dict[str, Any]:
         return _run(docker_monitors.collect)
+
+    @app.get("/docker-hosts")
+    def docker_hosts() -> dict[str, Any]:
+        def collect_hosts() -> dict[str, Any]:
+            hosts = uptime_kuma_v2.fetch_docker_hosts()
+            return {"hosts": hosts, "count": len(hosts)}
+
+        return _run(collect_hosts)
+
+    @app.get("/compose-stacks")
+    def compose_stacks() -> dict[str, Any]:
+        force_refresh = request.query.get("refresh", "").lower() in {"1", "true", "yes"}
+        return _run(lambda: portainer_stacks.collect(force_refresh=force_refresh))
 
     @app.get("/ping-monitors")
     def ping_monitors_check() -> dict[str, Any]:

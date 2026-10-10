@@ -35,6 +35,8 @@ when the aggregate endpoint is called.
 | `GET` | `/docker-updater` | docker-updater pending-update count. |
 | `GET` | `/docker` | Running/stopped container count. |
 | `GET` | `/docker-monitors` | Containers missing an Uptime Kuma v2 docker monitor. |
+| `GET` | `/docker-hosts` | Configured Uptime Kuma v2 Docker hosts, for selecting the host used by a new monitor. |
+| `GET` | `/compose-stacks` | Containers classified by whether their Portainer Compose stack is linked to the configured GitHub source. |
 | `GET` | `/ping-monitors` | Devices missing an Uptime Kuma v2 ping monitor. |
 | `GET` | `/additional-monitors` | Monitors not covered by the container or ping checks. |
 | `GET` | `/allowlist` | `ALLOWED_ADDITIONAL_MONITORS` entries matching no monitor. |
@@ -44,6 +46,9 @@ when the aggregate endpoint is called.
 | `POST` | `/actions/prune-images` | Delete every image not used by a container (Docker `prune -a`). |
 | `POST` | `/actions/delete-image` | Delete one unused image (JSON body `{"image": ...}`). |
 | `POST` | `/actions/add-ping-monitor` | Create an Uptime Kuma v2 ping monitor for one device (JSON body `{"device": ...}`). |
+| `POST` | `/actions/add-docker-monitor` | Create a Docker monitor for one uncovered container (JSON body `{"container": ..., "host_id": ...}`). |
+| `POST` | `/actions/delete-all-monitors` | Delete every Uptime Kuma v2 monitor. |
+| `POST` | `/actions/redeploy-compose` | Pull and redeploy the Portainer Git stack mapped to a container (JSON body `{"container": ...}`); does not force image pulling. |
 | `POST` | `/actions/delete-monitor` | Delete one additional Uptime Kuma v2 monitor (JSON body `{"name": ...}`). |
 | `POST` | `/actions/start-container` | Start one stopped container (JSON body `{"name": ...}`). |
 | `POST` | `/actions/delete-container` | Delete one stopped container (JSON body `{"name": ...}`). |
@@ -90,23 +95,33 @@ All configuration is via environment variables, set in `docker-compose.yml`.
 | `WEBDAV_RECENT_HOURS` | `24` | File is "recent" if modified within this many hours. |
 | `DOCKER_UPDATER_BASE_URL` | — | Base URL of docker-updater, e.g. `http://docker-updater:9090`. |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker socket for the container count. |
+| `PORTAINER_API_KEY` | — | Portainer API access token sent using `X-API-Key`; required for Compose stack lookup and redeploy. |
+| `DOCKER_COMPOSE` | — | GitHub Compose source URL including its site directory, e.g. `https://github.com/mayberryjp/dockercompose/house` or `/farm`. |
+| `COMPOSE_CACHE_TTL_SECONDS` | `300` | How long the Docker/Portainer Compose inventory is cached. Use the dashboard's **refresh** button to force an immediate refresh. |
 | `CONTAINER_BLOB` | — | URL(s) of the per-site container list (comma-separate multiple URLs to merge them); the container name is the first DNS label of each line's 2nd comma-separated field (`<target>,<container>.<domain>,<ttl>`). |
 | `UPTIME_KUMA_V2_API_BASE_URL` | — | Base URL of [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api), e.g. `http://uptimekuma-v2-api:12000`. |
 | `UPTIME_KUMA_V2_API_KEY` | — | API key sent as the `X-API-Key` header to uptime-kuma-v2-api. |
 | `SANDO_DEVICES_URL` | — | URL of the per-site device list (`ip_address,domain_name,interval` lines); a device is the first DNS label of the 2nd field, matched against ping monitors named like `OFFICE PING NETGEARSWITCH`. |
 | `ALLOWED_ADDITIONAL_MONITORS` | — | Comma-separated, case-insensitive substrings; a monitor is excluded from the `additional_monitors` check when any entry appears anywhere in its name. |
 | `UPTIME_KUMA_PUBLIC_URL` | — | Browser-reachable Uptime Kuma URL for the dashboard's monitor section links (falls back to `UPTIME_KUMA_BASE_URL`). |
-| `PORTAINER_URL` | — | Browser-reachable Portainer URL for the container and image section links. |
+| `PORTAINER_URL` | — | Portainer base URL for the dashboard link and API requests; must be reachable from the app container, e.g. `http://portainer:9000` or `https://portainer.example.com`. |
 | `DOCKER_UPDATER_PUBLIC_URL` | — | Browser-reachable docker-updater URL for the pending-updates section link (falls back to `DOCKER_UPDATER_BASE_URL`). |
 
 The dashboard is a dark "actions dashboard": a single table with **Monitor type**,
 **Issue**, and **Action** columns, one row per issue, where sections with no issues are
 hidden. Every row's action cell links to the relevant web UI (reusing the section URLs
-above), and actionable rows carry singular buttons: **add monitor** (create a ping
-monitor for an uncovered device), **start**/**delete** (a stopped container), **update**
-(a docker-updater update for one container), **delete image** (remove one unused image),
-and **delete monitor** (remove an unexpected Uptime Kuma monitor). These are
-unauthenticated `POST` actions, so only expose this service on a trusted network.
+above). Uncovered containers have a Docker-host selector and **add monitor** action;
+uncovered devices can also get a ping monitor. Newly created monitors are added to the
+configured Uptime Kuma status page. Other row actions start/delete stopped containers,
+trigger one docker-updater update, delete one unused image, or delete an unexpected
+Uptime Kuma monitor. A confirmed header action deletes all Uptime Kuma monitors. These
+are unauthenticated `POST` actions, so only expose this service on a trusted network.
+
+Compose rows are matched to Portainer Git stacks using the live Compose project/file
+labels, the configured repository, and source slug. Git-linked rows offer **pull &
+redeploy** through Portainer with `RepullImageAndRedeploy` disabled; local Compose and
+unmanaged containers are shown without that action. Configure a Portainer API token
+with permission to view and update the relevant stacks.
 
 The Docker check reads the mounted socket, and the **delete image** action writes to it
 (image remove), so the socket is mounted read-write. The image runs as a non-root user,

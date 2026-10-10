@@ -11,8 +11,11 @@ from local_monitoring.domain import (
     additional_monitors,
     docker_containers,
     docker_images,
+    docker_monitors,
     docker_updater,
     ping_monitors,
+    portainer_stacks,
+    uptime_kuma_v2,
 )
 from local_monitoring.domain.errors import CheckError
 
@@ -70,6 +73,32 @@ def register_action_routes(app: Bottle) -> None:
         if not device:
             return _missing("device")
         return _run(lambda: ping_monitors.add_ping_monitor(device))
+
+    @app.post("/actions/add-docker-monitor")
+    def add_docker_monitor() -> dict[str, Any]:
+        container = _target("container")
+        host_id = _target("host_id")
+        if not container:
+            return _missing("container")
+        if not host_id:
+            return _missing("host_id")
+        try:
+            parsed_host_id = int(host_id)
+        except ValueError:
+            response.status = 400
+            return {"status": "error", "code": "invalid_request", "error": "host_id must be an integer"}
+        return _run(lambda: docker_monitors.add_docker_monitor(container, parsed_host_id))
+
+    @app.post("/actions/delete-all-monitors")
+    def delete_all_monitors() -> dict[str, Any]:
+        return _run(uptime_kuma_v2.delete_all_monitors)
+
+    @app.post("/actions/redeploy-compose")
+    def redeploy_compose() -> dict[str, Any]:
+        container = _target("container")
+        if not container:
+            return _missing("container")
+        return _run(lambda: portainer_stacks.redeploy_for_container(container))
 
     @app.post("/actions/delete-monitor")
     def delete_monitor() -> dict[str, Any]:

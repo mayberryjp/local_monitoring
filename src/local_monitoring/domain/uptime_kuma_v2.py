@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -65,6 +66,111 @@ def fetch_monitors(base_url: str, api_key: str) -> list[dict[str, Any]]:
     if resp.status_code != 200:
         raise CheckError("upstream_error", f"uptime-kuma-v2-api returned HTTP {resp.status_code}")
     return resp.json().get("monitors") or []
+
+
+def fetch_docker_hosts() -> list[dict[str, Any]]:
+    """Return configured Docker host IDs and names from the v2 API."""
+    base_url = settings.uptime_kuma_v2_api_base_url.rstrip("/")
+    if not base_url:
+        raise CheckError("not_configured", "uptime-kuma-v2-api is not configured")
+    try:
+        resp = requests.get(
+            f"{base_url}/v1/docker-hosts",
+            headers={"X-API-Key": settings.uptime_kuma_v2_api_key},
+            timeout=settings.http_timeout_seconds,
+        )
+    except requests.RequestException as exc:
+        raise CheckError(
+            "upstream_unreachable", "uptime-kuma-v2-api request failed", str(exc)
+        ) from exc
+    if resp.status_code != 200:
+        raise CheckError("upstream_error", f"uptime-kuma-v2-api returned HTTP {resp.status_code}")
+    return resp.json().get("hosts") or []
+
+
+def create_monitor(payload: dict[str, Any]) -> dict[str, Any]:
+    """Create a monitor and add it to the configured Uptime Kuma status page."""
+    base_url = settings.uptime_kuma_v2_api_base_url.rstrip("/")
+    slug = settings.uptime_kuma_slug.strip()
+    if not base_url or not slug:
+        raise CheckError("not_configured", "Uptime Kuma v2 API and status page slug are required")
+
+    headers = {"X-API-Key": settings.uptime_kuma_v2_api_key}
+    try:
+        resp = requests.post(
+            f"{base_url}/v1/monitors",
+            headers=headers,
+            json=payload,
+            timeout=settings.http_timeout_seconds,
+        )
+    except requests.RequestException as exc:
+        raise CheckError(
+            "upstream_unreachable", "uptime-kuma-v2-api create request failed", str(exc)
+        ) from exc
+    if resp.status_code != 200:
+        raise CheckError(
+            "upstream_error", f"uptime-kuma-v2-api create returned HTTP {resp.status_code}"
+        )
+
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {}
+    monitor_id = body.get("monitorID") if isinstance(body, dict) else None
+    if monitor_id is None:
+        raise CheckError("upstream_error", "uptime-kuma-v2-api create response omitted monitorID")
+
+    try:
+        page_resp = requests.post(
+            f"{base_url}/v1/statuspages/{quote(slug, safe='')}/monitors",
+            headers=headers,
+            json={"monitor_ids": [monitor_id]},
+            timeout=settings.http_timeout_seconds,
+        )
+    except requests.RequestException as exc:
+        raise CheckError(
+            "upstream_unreachable",
+            f"monitor {monitor_id} was created but status-page assignment failed; do not retry creation",
+            str(exc),
+        ) from exc
+    if page_resp.status_code != 200:
+        raise CheckError(
+            "upstream_error",
+            f"monitor {monitor_id} was created but status-page assignment returned HTTP "
+            f"{page_resp.status_code}; do not retry creation",
+        )
+    return {"monitor_id": monitor_id, "status_page": slug}
+
+
+def delete_all_monitors() -> dict[str, Any]:
+    """Delete every monitor returned by the live Uptime Kuma v2 monitor list."""
+    base_url = settings.uptime_kuma_v2_api_base_url.rstrip("/")
+    if not base_url:
+        raise CheckError("not_configured", "uptime-kuma-v2-api is not configured")
+
+    monitors = fetch_monitors(base_url, settings.uptime_kuma_v2_api_key)
+    headers = {"X-API-Key": settings.uptime_kuma_v2_api_key}
+    deleted = 0
+    failed: list[dict[str, Any]] = []
+    for monitor in monitors:
+        monitor_id = monitor.get("id")
+        if monitor_id is None:
+            failed.append({"name": monitor.get("name"), "error": "monitor id missing"})
+            continue
+        try:
+            resp = requests.delete(
+                f"{base_url}/v1/monitors/{monitor_id}",
+                headers=headers,
+                timeout=settings.http_timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            failed.append({"id": monitor_id, "error": str(exc)})
+            continue
+        if resp.status_code == 200:
+            deleted += 1
+        else:
+            failed.append({"id": monitor_id, "error": f"HTTP {resp.status_code}"})
+    return {"deleted": deleted, "total": len(monitors), "failed": failed}
 
 
 def last_token(name: str) -> str:

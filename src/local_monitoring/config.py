@@ -35,7 +35,13 @@ class Settings(BaseSettings):
     # used for server-to-server calls. Blank -> the title renders as plain text.
     uptime_kuma_public_url: str = Field("", validation_alias="UPTIME_KUMA_PUBLIC_URL")
     portainer_url: str = Field("", validation_alias="PORTAINER_URL")
+    portainer_api_key: str = Field("", validation_alias="PORTAINER_API_KEY")
     docker_updater_public_url: str = Field("", validation_alias="DOCKER_UPDATER_PUBLIC_URL")
+    compose_cache_ttl_seconds: int = Field(300, validation_alias="COMPOSE_CACHE_TTL_SECONDS")
+
+    # GitHub Compose source URL, including its site directory, e.g.
+    # ``https://github.com/mayberryjp/dockercompose/house``.
+    docker_compose: str = Field("", validation_alias="DOCKER_COMPOSE")
 
     # Per-site container list(s) -> Uptime Kuma v2 docker-monitor coverage.
     # CONTAINER_BLOB may be a single URL or a comma-separated list that is merged.

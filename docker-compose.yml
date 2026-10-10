@@ -24,6 +24,11 @@ services:
       # 4) Docker running/stopped container count
       DOCKER_HOST: unix:///var/run/docker.sock
 
+      # Portainer API for Git-stack lookup and pull/redeploy actions.
+      PORTAINER_API_KEY: ""
+      DOCKER_COMPOSE: https://github.com/mayberryjp/dockercompose/house
+      COMPOSE_CACHE_TTL_SECONDS: "300"
+
       # 5) Per-site container list -> Uptime Kuma v2 docker-monitor coverage
       # (comma-separate multiple blob URLs to merge them)
       CONTAINER_BLOB: https://raw.githubusercontent.com/mayberryjp/localdomains/refs/heads/main/azure.mayberry.farm

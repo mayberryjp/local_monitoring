@@ -34,6 +34,7 @@ _DASHBOARD_HTML = """<!doctype html>
            margin-bottom: 1.4rem; }
   .title { font-size: 1.25rem; font-weight: 700; letter-spacing: .2px; }
   .title::before { content: "\u258d"; color: var(--accent); margin-right: .4rem; }
+  .header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
   .tag { color: var(--muted); font-size: .72rem; margin-top: .25rem; text-transform: uppercase;
          letter-spacing: .16em; }
   button { font: inherit; font-size: .8rem; color: var(--fg); background: var(--panel2);
@@ -41,6 +42,11 @@ _DASHBOARD_HTML = """<!doctype html>
            cursor: pointer; transition: border-color .15s, color .15s; }
   button:hover { border-color: var(--accent); color: #fff; }
   button:disabled { opacity: .5; cursor: default; }
+  button.danger { border-color: #713b3b; color: #ffb4b4; }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  select { max-width: 12rem; min-width: 8rem; font: inherit; font-size: .72rem; color: var(--fg);
+           background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+           padding: .28rem .45rem; }
   .status { display: flex; align-items: center; gap: .65rem; margin-bottom: 1.4rem; font-weight: 600;
             background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
             padding: .75rem .95rem; }
@@ -97,7 +103,10 @@ _DASHBOARD_HTML = """<!doctype html>
         <div class="title">local-monitoring</div>
         <div class="tag">actions dashboard</div>
       </div>
-      <button id="refresh" type="button">refresh</button>
+      <div class="header-actions">
+        <button id="delete-all-monitors" class="danger" type="button">delete all Kuma monitors</button>
+        <button id="refresh" type="button">refresh</button>
+      </div>
     </header>
 
     <div id="status" class="status"><span class="dot"></span><span id="status-text">loading\u2026</span></div>
@@ -112,7 +121,7 @@ _DASHBOARD_HTML = """<!doctype html>
   </div>
 
   <script>
-    var REFRESH_MS = 30000;
+    var REFRESH_MS = 300000;
     var LINKS = __LINKS_JSON__;
     var CARDS = [
       { type: "Monitor", key: "uptime_kuma", list: "down_monitors", link: "kuma", note: "down" },
@@ -120,7 +129,19 @@ _DASHBOARD_HTML = """<!doctype html>
         note: "no ping monitor",
         action: { url: "/actions/add-ping-monitor", label: "add monitor", field: "device" } },
       { type: "Container monitor", key: "docker_monitors", list: "unmonitored_containers",
-        link: "kuma", note: "no docker monitor" },
+        link: "kuma", note: "no docker monitor", dockerHost: true },
+      { type: "Compose source", key: "compose_stacks", list: "containers", link: "portainer",
+        map: function (i) {
+          var detail = i.source === "github" ? "GitHub: " + i.source_file :
+            (i.source === "local compose" ? "not linked to configured GitHub source" : "not managed by Compose");
+          return {
+            issue: i.name + " · " + detail,
+            target: i.name,
+            actions: i.can_redeploy ? [
+              { url: "/actions/redeploy-compose", label: "pull & redeploy", field: "container" }
+            ] : []
+          };
+        } },
       { type: "Additional", key: "additional_monitors", list: "additional_monitors",
         link: "kuma", note: "unexpected monitor",
         action: { url: "/actions/delete-monitor", label: "delete monitor", field: "name", danger: true } },
@@ -142,12 +163,16 @@ _DASHBOARD_HTML = """<!doctype html>
     ];
 
     var refreshBtn = document.getElementById("refresh");
+    var deleteAllBtn = document.getElementById("delete-all-monitors");
     var statusEl = document.getElementById("status");
     var statusText = document.getElementById("status-text");
     var board = document.getElementById("board");
     var rowsEl = document.getElementById("rows");
     var allclear = document.getElementById("allclear");
     var footer = document.getElementById("footer");
+    var DOCKER_HOSTS = [];
+    var DOCKER_HOSTS_ERROR = "";
+    var MONITOR_TOTAL = null;
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, function (c) {
@@ -167,15 +192,32 @@ _DASHBOARD_HTML = """<!doctype html>
       var issue = escapeHtml(mapped.issue);
       if (card.note) issue += ' <span class="sub">\u00b7 ' + escapeHtml(card.note) + "</span>";
       var act = "";
-      var actions = card.actions || (card.action ? [card.action] : []);
-      actions.forEach(function (a) {
-        var cls = "btn" + (a.danger ? " danger" : "");
-        act += '<button class="' + cls + '" data-url="' + a.url +
-          '" data-field="' + a.field +
-          '" data-target="' + encodeURIComponent(mapped.target) +
-          '" data-label="' + escapeHtml(a.label) + '">' +
-          escapeHtml(a.label) + "</button>";
-      });
+      var actions = mapped.actions || card.actions || (card.action ? [card.action] : []);
+      if (card.dockerHost) {
+        var options = '<option value="">select Docker host</option>';
+        DOCKER_HOSTS.forEach(function (host) {
+          options += '<option value="' + escapeHtml(host.id) + '">' +
+            escapeHtml(host.name || ("Docker host #" + host.id)) + " (#" + escapeHtml(host.id) + ")</option>";
+        });
+        if (DOCKER_HOSTS_ERROR || DOCKER_HOSTS.length === 0) {
+          options = '<option value="">' + escapeHtml(DOCKER_HOSTS_ERROR || "no Docker hosts configured") + "</option>";
+        }
+        act += '<select class="host-select" aria-label="Docker host for ' + issue + '"' +
+          (DOCKER_HOSTS_ERROR || DOCKER_HOSTS.length === 0 ? " disabled" : "") + ">" + options + "</select>";
+        act += '<button class="btn" data-url="/actions/add-docker-monitor" data-field="container"' +
+          ' data-target="' + encodeURIComponent(mapped.target) + '" data-label="add monitor"' +
+          ' data-host-required="true" disabled' +
+          '>add monitor</button>';
+      } else {
+        actions.forEach(function (a) {
+          var cls = "btn" + (a.danger ? " danger" : "");
+          act += '<button class="' + cls + '" data-url="' + a.url +
+            '" data-field="' + a.field +
+            '" data-target="' + encodeURIComponent(mapped.target) +
+            '" data-label="' + escapeHtml(a.label) + '">' +
+            escapeHtml(a.label) + "</button>";
+        });
+      }
       act += openLink(card);
       if (!act) act = '<span class="sub">\u2014</span>';
       return '<tr><td class="type">' + escapeHtml(card.type) + '</td><td class="issue">' +
@@ -224,6 +266,7 @@ _DASHBOARD_HTML = """<!doctype html>
     }
 
     function describeAction(url, target, d) {
+      if (url.indexOf("redeploy-compose") >= 0) return "Git Compose redeploy requested for " + (d.container || target);
       if (url.indexOf("add-ping-monitor") >= 0) return "created monitor " + (d.created || target);
       if (url.indexOf("delete-monitor") >= 0) return "deleted monitor " + (d.deleted || target);
       if (url.indexOf("delete-image") >= 0) return "removed image " + (d.removed || target);
@@ -242,6 +285,8 @@ _DASHBOARD_HTML = """<!doctype html>
       var target = decodeURIComponent(b.getAttribute("data-target"));
       var payload = {};
       if (field) payload[field] = target;
+      var hostSelect = b.parentElement.querySelector(".host-select");
+      if (hostSelect) payload.host_id = Number(hostSelect.value);
       fetch(url, {
         method: "POST", cache: "no-store",
         headers: { "Content-Type": "application/json" },
@@ -266,17 +311,64 @@ _DASHBOARD_HTML = """<!doctype html>
       buttons.forEach(function (b) {
         b.addEventListener("click", function () { runAction(b); });
       });
+      rowsEl.querySelectorAll(".host-select").forEach(function (select) {
+        select.addEventListener("change", function () {
+          var button = select.parentElement.querySelector("button[data-host-required]");
+          if (button) button.disabled = !select.value;
+        });
+      });
     }
 
-    function refresh() {
+    function deleteAllMonitors() {
+      var countText = MONITOR_TOTAL === null ? "all" : MONITOR_TOTAL;
+      if (!window.confirm("Permanently delete " + countText + " Uptime Kuma monitors? This cannot be undone.")) return;
+      deleteAllBtn.disabled = true;
+      deleteAllBtn.textContent = "deleting...";
+      fetch("/actions/delete-all-monitors", { method: "POST", cache: "no-store" }).then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+      }).then(function (res) {
+        if (!res.ok || !res.data || res.data.status === "error") {
+          throw new Error(res.data && res.data.error ? res.data.error : "delete-all failed");
+        }
+        var failed = Array.isArray(res.data.failed) ? res.data.failed.length : 0;
+        footer.textContent = failed
+          ? "deleted " + res.data.deleted + " of " + res.data.total + " monitors; " + failed + " failed"
+          : "deleted " + res.data.deleted + " of " + res.data.total + " monitors";
+        refresh();
+      }).catch(function (e) {
+        footer.textContent = "delete-all failed: " + e.message;
+      }).then(function () {
+        deleteAllBtn.disabled = false;
+        deleteAllBtn.textContent = "delete all Kuma monitors";
+      });
+    }
+
+    function refresh(forceCompose) {
       if (refreshBtn.disabled) return;
       refreshBtn.disabled = true;
       refreshBtn.textContent = "refreshing\u2026";
-      fetch("/summary", { cache: "no-store" }).then(function (r) {
-        return r.json();
-      }).then(function (data) {
+      var composeUrl = "/compose-stacks" + (forceCompose ? "?refresh=true" : "");
+      Promise.all([
+        fetch("/summary", { cache: "no-store" }).then(function (r) { return r.json(); }),
+        fetch("/docker-hosts", { cache: "no-store" }).then(function (r) {
+          return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+        }).catch(function (e) { return { ok: false, data: { error: String(e) } }; }),
+        fetch(composeUrl, { cache: "no-store" }).then(function (r) {
+          return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+        }).catch(function (e) { return { ok: false, data: { error: String(e) } }; })
+      ]).then(function (results) {
+        var data = results[0];
+        var hostsResult = results[1];
+        var composeResult = results[2];
+        DOCKER_HOSTS = hostsResult.ok && Array.isArray(hostsResult.data.hosts) ? hostsResult.data.hosts : [];
+        DOCKER_HOSTS_ERROR = hostsResult.ok ? "" : (hostsResult.data.error || "Docker hosts unavailable");
+        MONITOR_TOTAL = data.checks && data.checks.uptime_kuma ? data.checks.uptime_kuma.total : null;
+        data.checks = data.checks || {};
+        data.checks.compose_stacks = composeResult.ok
+          ? { status: "ok", containers: composeResult.data.containers || [] }
+          : { status: "error", error: composeResult.data.error || "Compose source status unavailable" };
         setStatus(render(data.checks || {}));
-        footer.textContent = "updated " + new Date().toLocaleTimeString() + " \u00b7 auto every 30s";
+        footer.textContent = "updated " + new Date().toLocaleTimeString() + " \u00b7 auto every 5m";
       }).catch(function (e) {
         statusEl.className = "status alert";
         statusText.textContent = "failed to load status";
@@ -287,7 +379,8 @@ _DASHBOARD_HTML = """<!doctype html>
       });
     }
 
-    refreshBtn.addEventListener("click", refresh);
+    refreshBtn.addEventListener("click", function () { refresh(true); });
+    deleteAllBtn.addEventListener("click", deleteAllMonitors);
     refresh();
     setInterval(refresh, REFRESH_MS);
   </script>

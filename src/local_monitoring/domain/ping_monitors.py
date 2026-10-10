@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import requests
-
 from local_monitoring.config import settings
 from local_monitoring.domain import uptime_kuma_v2
 from local_monitoring.domain.errors import CheckError
@@ -103,26 +101,10 @@ def add_ping_monitor(device: str) -> dict[str, Any]:
         "hostname": record["hostname"],
         "interval": PING_INTERVAL_SECONDS,
     }
-    base = settings.uptime_kuma_v2_api_base_url.rstrip("/")
-    try:
-        resp = requests.post(
-            f"{base}/v1/monitors",
-            headers={"X-API-Key": settings.uptime_kuma_v2_api_key},
-            json=payload,
-            timeout=settings.http_timeout_seconds,
-        )
-    except requests.RequestException as exc:
-        raise CheckError(
-            "upstream_unreachable", "uptime-kuma-v2-api create request failed", str(exc)
-        ) from exc
-    if resp.status_code != 200:
-        raise CheckError(
-            "upstream_error", f"uptime-kuma-v2-api create returned HTTP {resp.status_code}"
-        )
-
-    try:
-        body = resp.json()
-    except ValueError:
-        body = {}
-    monitor_id = body.get("monitorID") if isinstance(body, dict) else None
-    return {"created": name, "monitor_id": monitor_id, "hostname": record["hostname"]}
+    result = uptime_kuma_v2.create_monitor(payload)
+    return {
+        "created": name,
+        "monitor_id": result["monitor_id"],
+        "hostname": record["hostname"],
+        "status_page": result["status_page"],
+    }

@@ -17,7 +17,9 @@ from local_monitoring.domain import (
     docker_monitors,
     docker_updater,
     ping_monitors,
+    portainer_stacks,
     uptime_kuma,
+    uptime_kuma_v2,
     webdav,
 )
 from local_monitoring.domain.errors import CheckError
@@ -131,6 +133,38 @@ def test_uptime_kuma_counts_up_and_down(monkeypatch: pytest.MonkeyPatch) -> None
         "down": 1,
         "total": 3,
         "down_monitors": ["Database"],
+    }
+
+
+def test_summary_handles_non_json_uptime_kuma_response(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _InvalidJsonResponse:
+        status_code = 200
+
+        def json(self) -> Any:
+            raise ValueError("Expecting value")
+
+    monkeypatch.setattr(uptime_kuma.settings, "uptime_kuma_base_url", "http://kuma")
+    monkeypatch.setattr(uptime_kuma.settings, "uptime_kuma_slug", "mine")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _InvalidJsonResponse())
+    monkeypatch.setattr(webdav, "collect", lambda: {})
+    monkeypatch.setattr(docker_updater, "collect", lambda: {})
+    monkeypatch.setattr(docker_containers, "collect", lambda: {})
+    monkeypatch.setattr(docker_monitors, "collect", lambda: {})
+    monkeypatch.setattr(ping_monitors, "collect", lambda: {})
+    monkeypatch.setattr(additional_monitors, "collect", lambda: {})
+    monkeypatch.setattr(allowlist, "collect", lambda: {})
+    monkeypatch.setattr(docker_images, "collect", lambda: {})
+
+    resp = client.get("/summary")
+
+    assert resp.status_code == 200
+    assert resp.json["checks"]["uptime_kuma"] == {
+        "status": "error",
+        "code": "upstream_error",
+        "error": "uptime-kuma returned invalid JSON",
+        "detail": "Expecting value",
     }
 
 
@@ -398,12 +432,10 @@ def test_add_ping_monitor_creates_from_sando(monkeypatch: pytest.MonkeyPatch) ->
     # The device line's third field is a DNS TTL (86400s) and must be ignored; the
     # created monitor uses the fixed PING_INTERVAL_SECONDS cadence instead.
     blob = "10.0.1.5,netgearswitch.office.mayberry.farm,86400\n"
-    posted: dict[str, Any] = {}
+    posted: list[dict[str, Any]] = []
 
     def fake_post(url: str, *a: Any, **k: Any) -> _FakeResponse:
-        posted["url"] = url
-        posted["json"] = k.get("json")
-        posted["headers"] = k.get("headers")
+        posted.append({"url": url, "json": k.get("json"), "headers": k.get("headers")})
         return _FakeResponse(200, {"ok": True, "monitorID": 7, "msg": "successAdded"})
 
     monkeypatch.setattr(ping_monitors.settings, "sando_devices_url", "http://blob/devices")
@@ -411,6 +443,7 @@ def test_add_ping_monitor_creates_from_sando(monkeypatch: pytest.MonkeyPatch) ->
         ping_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
     )
     monkeypatch.setattr(ping_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(ping_monitors.settings, "uptime_kuma_slug", "mine")
     monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(200, text=blob))
     monkeypatch.setattr(requests, "post", fake_post)
 
@@ -419,15 +452,19 @@ def test_add_ping_monitor_creates_from_sando(monkeypatch: pytest.MonkeyPatch) ->
         "created": "OFFICE PING NETGEARSWITCH",
         "monitor_id": 7,
         "hostname": "10.0.1.5",
+        "status_page": "mine",
     }
-    assert posted["url"] == "http://kuma-v2:12000/v1/monitors"
-    assert posted["json"] == {
+    assert posted[0]["url"] == "http://kuma-v2:12000/v1/monitors"
+    assert posted[0]["json"] == {
         "type": "ping",
         "name": "OFFICE PING NETGEARSWITCH",
         "hostname": "10.0.1.5",
         "interval": 60,
     }
-    assert posted["headers"] == {"X-API-Key": "secret"}
+    assert posted[0]["headers"] == {"X-API-Key": "secret"}
+    assert posted[1]["url"] == "http://kuma-v2:12000/v1/statuspages/mine/monitors"
+    assert posted[1]["json"] == {"monitor_ids": [7]}
+    assert posted[1]["headers"] == {"X-API-Key": "secret"}
 
 
 def test_add_ping_monitor_rejects_unknown_device(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -441,6 +478,79 @@ def test_add_ping_monitor_rejects_unknown_device(monkeypatch: pytest.MonkeyPatch
     with pytest.raises(CheckError) as excinfo:
         ping_monitors.add_ping_monitor("unknown")
     assert excinfo.value.code == "not_found"
+
+
+def test_add_docker_monitor_creates_and_adds_to_status_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    blob = "docker.azure.farm,web.azure.farm,86400\n"
+    posted: list[dict[str, Any]] = []
+
+    def fake_get(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        if url.endswith("/v1/monitors"):
+            return _FakeResponse(200, {"monitors": []})
+        if url.endswith("/v1/docker-hosts"):
+            return _FakeResponse(200, {"hosts": [{"id": 2, "name": "local Docker"}]})
+        return _FakeResponse(200, text=blob)
+
+    def fake_post(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        posted.append({"url": url, "json": k.get("json"), "headers": k.get("headers")})
+        payload = {"ok": True, "monitorID": 17} if url.endswith("/v1/monitors") else {"ok": True}
+        return _FakeResponse(200, payload)
+
+    monkeypatch.setattr(docker_monitors.settings, "container_blob_url", "http://blob/list")
+    monkeypatch.setattr(
+        docker_monitors.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(docker_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(docker_monitors.settings, "uptime_kuma_slug", "mine")
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    assert docker_monitors.add_docker_monitor("web", 2) == {
+        "created": "AZURE CONTAINER WEB",
+        "monitor_id": 17,
+        "container": "web",
+        "docker_host": 2,
+        "status_page": "mine",
+    }
+    assert posted[0]["url"] == "http://kuma-v2:12000/v1/monitors"
+    assert posted[0]["json"] == {
+        "type": "docker",
+        "name": "AZURE CONTAINER WEB",
+        "docker_host": 2,
+        "docker_container": "web",
+    }
+    assert posted[1]["url"] == "http://kuma-v2:12000/v1/statuspages/mine/monitors"
+    assert posted[1]["json"] == {"monitor_ids": [17]}
+    assert all(call["headers"] == {"X-API-Key": "secret"} for call in posted)
+
+
+def test_delete_all_monitors_deletes_every_listed_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    deleted: list[str] = []
+
+    def fake_delete(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        deleted.append(url)
+        return _FakeResponse(200, {"ok": True})
+
+    monkeypatch.setattr(
+        uptime_kuma_v2.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
+    )
+    monkeypatch.setattr(uptime_kuma_v2.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(
+        requests,
+        "get",
+        lambda *a, **k: _FakeResponse(
+            200, {"monitors": [{"id": 1, "name": "A"}, {"id": 7, "name": "B"}]}
+        ),
+    )
+    monkeypatch.setattr(requests, "delete", fake_delete)
+
+    assert uptime_kuma_v2.delete_all_monitors() == {"deleted": 2, "total": 2, "failed": []}
+    assert deleted == [
+        "http://kuma-v2:12000/v1/monitors/1",
+        "http://kuma-v2:12000/v1/monitors/7",
+    ]
 
 
 def test_additional_monitors_lists_uncovered(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -627,6 +737,248 @@ def test_action_add_ping_monitor_endpoint(
     assert resp.status_code == 200
     assert resp.json["created"] == "OFFICE PING NETGEARSWITCH"
     assert captured["device"] == "netgearswitch"
+
+
+def test_docker_hosts_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        uptime_kuma_v2,
+        "fetch_docker_hosts",
+        lambda: [{"id": 2, "name": "local Docker"}],
+    )
+    resp = client.get("/docker-hosts")
+    assert resp.status_code == 200
+    assert resp.json == {
+        "status": "ok",
+        "hosts": [{"id": 2, "name": "local Docker"}],
+        "count": 1,
+    }
+
+
+def test_action_add_docker_monitor_endpoint(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake(container: str, host_id: int) -> dict[str, Any]:
+        captured.update(container=container, host_id=host_id)
+        return {"created": "AZURE CONTAINER WEB", "monitor_id": 17}
+
+    monkeypatch.setattr(docker_monitors, "add_docker_monitor", fake)
+    resp = client.post_json(
+        "/actions/add-docker-monitor", {"container": "web", "host_id": 2}
+    )
+    assert resp.status_code == 200
+    assert resp.json["created"] == "AZURE CONTAINER WEB"
+    assert captured == {"container": "web", "host_id": 2}
+
+
+def test_action_delete_all_monitors_endpoint(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        uptime_kuma_v2,
+        "delete_all_monitors",
+        lambda: {"deleted": 3, "total": 3, "failed": []},
+    )
+    resp = client.post_json("/actions/delete-all-monitors", {})
+    assert resp.status_code == 200
+    assert resp.json == {"status": "ok", "deleted": 3, "total": 3, "failed": []}
+
+
+def test_action_redeploy_compose_endpoint(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        portainer_stacks,
+        "redeploy_for_container",
+        lambda name: {"container": name, "stack": "localmonitoring", "image_pull": False},
+    )
+    resp = client.post_json("/actions/redeploy-compose", {"container": "localmonitoring"})
+    assert resp.status_code == 200
+    assert resp.json == {
+        "status": "ok",
+        "container": "localmonitoring",
+        "stack": "localmonitoring",
+        "image_pull": False,
+    }
+
+
+def test_compose_stacks_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        portainer_stacks,
+        "collect",
+        lambda force_refresh=False: {"containers": [{"name": "web"}]},
+    )
+    resp = client.get("/compose-stacks")
+    assert resp.status_code == 200
+    assert resp.json == {"status": "ok", "containers": [{"name": "web"}]}
+
+
+def test_compose_stacks_force_refresh_query(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        portainer_stacks,
+        "collect",
+        lambda force_refresh=False: calls.append(force_refresh) or {"containers": []},
+    )
+    resp = client.get("/compose-stacks?refresh=true")
+    assert resp.status_code == 200
+    assert calls == [True]
+
+
+def test_compose_stacks_cache_and_force_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def fake_collect() -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"containers": [{"name": str(calls)}]}
+
+    monkeypatch.setattr(portainer_stacks, "_collect_uncached", fake_collect)
+    monkeypatch.setattr(portainer_stacks.settings, "compose_cache_ttl_seconds", 300)
+    monkeypatch.setattr(portainer_stacks.settings, "docker_host", "tcp://docker-test")
+    monkeypatch.setattr(portainer_stacks.settings, "portainer_url", "http://portainer-test")
+    monkeypatch.setattr(portainer_stacks.settings, "docker_compose", "github.com/org/repo/site")
+    portainer_stacks.clear_cache()
+    try:
+        assert portainer_stacks.collect() == {"containers": [{"name": "1"}]}
+        assert portainer_stacks.collect() == {"containers": [{"name": "1"}]}
+        assert calls == 1
+        assert portainer_stacks.collect(force_refresh=True) == {"containers": [{"name": "2"}]}
+        assert calls == 2
+    finally:
+        portainer_stacks.clear_cache()
+
+
+def test_portainer_redeploy_matches_git_stack_and_disables_image_pull(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stack = {
+        "Id": 42,
+        "EndpointId": 4,
+        "Name": "localmonitoring",
+        "ProjectPath": "/data/compose/31",
+        "Env": [{"name": "SITE", "value": "house"}],
+        "Option": {"Prune": True},
+        "GitConfig": {
+            "URL": "https://github.com/mayberryjp/dockercompose.git",
+            "ConfigFilePath": "house/localmonitoring.yml",
+            "ReferenceName": "refs/heads/main",
+        },
+    }
+    monkeypatch.setattr(
+        portainer_stacks.settings, "portainer_url", "http://portainer:9000"
+    )
+    monkeypatch.setattr(portainer_stacks.settings, "portainer_api_key", "secret")
+    monkeypatch.setattr(
+        portainer_stacks.settings,
+        "docker_compose",
+        "github.com/mayberryjp/dockercompose/house",
+    )
+    monkeypatch.setattr(
+        portainer_stacks,
+        "_container_rows",
+        lambda: [
+            {
+                "name": "localmonitoring",
+                "status": "running",
+                "project": "localmonitoring",
+                "service": "api",
+                "config_files": "/data/compose/31/house/localmonitoring.yml",
+                "working_dir": "/data/compose/31/house",
+            }
+        ],
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_request(method: str, url: str, headers: dict[str, str], **kwargs: Any) -> Any:
+        calls.append({"method": method, "url": url, "headers": headers, **kwargs})
+        return [stack] if method == "GET" else {"Status": 1}
+
+    monkeypatch.setattr(portainer_stacks, "_request_json", fake_request)
+
+    assert portainer_stacks.redeploy_for_container("localmonitoring") == {
+        "container": "localmonitoring",
+        "stack": "localmonitoring",
+        "stack_id": 42,
+        "source_file": "house/localmonitoring.yml",
+        "image_pull": False,
+        "status": 1,
+    }
+    assert calls[0]["url"] == "http://portainer:9000/api/stacks"
+    assert calls[1]["method"] == "PUT"
+    assert calls[1]["url"] == "http://portainer:9000/api/stacks/42/git/redeploy"
+    assert calls[1]["params"] == {"endpointId": 4}
+    assert calls[1]["json"] == {
+        "Env": [{"name": "SITE", "value": "house"}],
+        "Prune": True,
+        "RepullImageAndRedeploy": False,
+    }
+    assert calls[1]["headers"] == {"X-API-Key": "secret"}
+
+
+def test_portainer_redeploy_rejects_unlinked_compose_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        portainer_stacks.settings, "portainer_url", "http://portainer:9000"
+    )
+    monkeypatch.setattr(portainer_stacks.settings, "portainer_api_key", "secret")
+    monkeypatch.setattr(
+        portainer_stacks.settings,
+        "docker_compose",
+        "github.com/mayberryjp/dockercompose/house",
+    )
+    monkeypatch.setattr(
+        portainer_stacks,
+        "_container_rows",
+        lambda: [{"name": "web", "project": "web", "config_files": "/opt/web/compose.yml"}],
+    )
+    monkeypatch.setattr(portainer_stacks, "_request_json", lambda *a, **k: [])
+
+    with pytest.raises(CheckError) as excinfo:
+        portainer_stacks.redeploy_for_container("web")
+    assert excinfo.value.code == "not_found"
+
+
+def test_compose_source_directory_selects_site(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        portainer_stacks.settings,
+        "docker_compose",
+        "https://github.com/mayberryjp/dockercompose/farm",
+    )
+    container = {
+        "project": "app",
+        "config_files": "/data/compose/4/farm/app.yml",
+    }
+    stack = {
+        "Name": "app",
+        "GitConfig": {
+            "URL": "https://github.com/mayberryjp/dockercompose.git",
+            "ConfigFilePath": "farm/app.yml",
+        },
+    }
+    wrong_site = {
+        "Name": "app",
+        "GitConfig": {
+            "URL": "https://github.com/mayberryjp/dockercompose.git",
+            "ConfigFilePath": "house/app.yml",
+        },
+    }
+
+    assert portainer_stacks._stack_for_container(container, [stack]) == stack
+    assert portainer_stacks._stack_for_container(container, [wrong_site]) is None
+
+
+def test_dashboard_shows_monitor_actions(client: TestApp) -> None:
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert 'id="delete-all-monitors"' in resp.text
+    assert 'data-url="/actions/add-docker-monitor"' in resp.text
+    assert 'url: "/actions/redeploy-compose"' in resp.text
+    assert 'var REFRESH_MS = 300000;' in resp.text
+    assert 'var composeUrl = "/compose-stacks"' in resp.text
+    assert 'refreshBtn.addEventListener("click", function () { refresh(true); });' in resp.text
 
 
 def test_action_update_one_endpoint(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:

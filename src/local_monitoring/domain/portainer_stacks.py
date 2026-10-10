@@ -92,11 +92,37 @@ def _compose_drift(stack: dict[str, Any]) -> dict[str, str]:
     deployed_commit, reference, config_path, additional_files = _deployment_metadata(stack)
     if not settings.github_api_token:
         return {"status": "unknown", "detail": "GITHUB_API_TOKEN is not configured"}
-    if not deployed_commit or not reference:
-        return {"status": "unknown", "detail": "Portainer stack has no deployed commit or Git reference"}
+    if not deployed_commit:
+        return {"status": "unknown", "detail": "Portainer stack has no deployed commit"}
 
     expected_repo, _ = _compose_source()
     repository = expected_repo.removeprefix("github.com/")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {settings.github_api_token}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if not reference:
+        try:
+            repo_resp = requests.get(
+                f"https://api.github.com/repos/{repository}",
+                headers=headers,
+                timeout=settings.http_timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            return {"status": "unknown", "detail": f"GitHub repository lookup failed: {exc}"}
+        if repo_resp.status_code != 200:
+            return {
+                "status": "unknown",
+                "detail": f"GitHub repository lookup returned HTTP {repo_resp.status_code}",
+            }
+        try:
+            reference = str(repo_resp.json().get("default_branch") or "")
+        except ValueError:
+            reference = ""
+        if not reference:
+            return {"status": "unknown", "detail": "GitHub repository has no default branch"}
+
     if reference.startswith("refs/heads/"):
         reference = reference.removeprefix("refs/heads/")
     elif reference.startswith("refs/tags/"):
@@ -108,11 +134,7 @@ def _compose_drift(stack: dict[str, Any]) -> dict[str, str]:
     try:
         resp = requests.get(
             url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {settings.github_api_token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
+            headers=headers,
             timeout=settings.http_timeout_seconds,
         )
     except requests.RequestException as exc:

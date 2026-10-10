@@ -1120,6 +1120,42 @@ def test_compose_drift_reads_portainer_current_deployment_info(
     assert "/compare/deployed-from-current-info...main" in captured["url"]
 
 
+def test_compose_drift_uses_github_default_branch_when_portainer_ref_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    urls: list[str] = []
+
+    def fake_get(url: str, *a: Any, **kwargs: Any) -> _FakeResponse:
+        urls.append(url)
+        if url.endswith("/repos/mayberryjp/dockercompose"):
+            return _FakeResponse(200, {"default_branch": "main"})
+        return _FakeResponse(
+            200,
+            {"status": "ahead", "files": [{"filename": "azure/homepage.yml"}]},
+        )
+
+    monkeypatch.setattr(portainer_stacks.settings, "github_api_token", "gh-token")
+    monkeypatch.setattr(
+        portainer_stacks.settings,
+        "docker_compose",
+        "https://github.com/mayberryjp/dockercompose/azure",
+    )
+    monkeypatch.setattr(portainer_stacks.requests, "get", fake_get)
+    stack = {
+        "CurrentDeploymentInfo": {
+            "ConfigHash": "deployed123",
+            "ReferenceName": "",
+            "ConfigFilePath": "azure/homepage.yml",
+        }
+    }
+
+    assert portainer_stacks._compose_drift(stack)["status"] == "changed"
+    assert urls == [
+        "https://api.github.com/repos/mayberryjp/dockercompose",
+        "https://api.github.com/repos/mayberryjp/dockercompose/compare/deployed123...main",
+    ]
+
+
 def test_dashboard_shows_monitor_actions(client: TestApp) -> None:
     resp = client.get("/")
     assert resp.status_code == 200

@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     # GitHub Compose source URL, including its site directory, e.g.
     # ``https://github.com/mayberryjp/dockercompose/house``.
     docker_compose: str = Field("", validation_alias="DOCKER_COMPOSE")
+    github_api_token: str = Field("", validation_alias="GITHUB_API_TOKEN")
 
     # Per-site container list(s) -> Uptime Kuma v2 docker-monitor coverage.
     # CONTAINER_BLOB may be a single URL or a comma-separated list that is merged.

@@ -29,7 +29,7 @@ when the aggregate endpoint is called.
 | `GET` | `/` | HTML status page rendering the down monitors, stopped containers, pending updates, unmonitored containers, and unused images. |
 | `GET` | `/health` | Process liveness. |
 | `GET` | `/ready` | Readiness (always ok — downstreams are checked per request). |
-| `GET` | `/summary` | All nine checks in one object, run in parallel. |
+| `GET` | `/summary` | All ten checks in one object, run in parallel. Add `?refresh=true` to bypass the Compose inventory cache. |
 | `GET` | `/uptime-kuma` | Uptime Kuma up/down counter. |
 | `GET` | `/webdav` | WebDAV file freshness. |
 | `GET` | `/docker-updater` | docker-updater pending-update count. |
@@ -71,7 +71,8 @@ Example `/summary`:
     "ping_monitors": {"status": "ok", "monitored": 4, "unmonitored": 1, "total": 5, "unmonitored_devices": ["printer"]},
     "additional_monitors": {"status": "ok", "additional": 1, "allowed": 2, "total": 14, "additional_monitors": ["GARAGE HTTP DOORUI"]},
     "allowlist": {"status": "ok", "allowed": 2, "unmatched": 1, "unmatched_allowed": ["old-nas"]},
-    "docker_images": {"status": "ok", "unused": 2, "total": 25, "unused_images": ["redis:7", "sha256:0a1b2c3d4e5f"]}
+    "docker_images": {"status": "ok", "unused": 2, "total": 25, "unused_images": ["redis:7", "sha256:0a1b2c3d4e5f"]},
+    "compose_stacks": {"status": "ok", "total": 23, "github_managed": 21, "unlinked_compose": 1, "unmanaged": 1, "drifted": 2, "comparison_unknown": 0, "containers": [{"name": "localmonitoring", "source": "github", "github_managed": true, "drift_status": "changed", "source_file": "house/localmonitoring.yml", "can_redeploy": true}]}
   }
 }
 ```
@@ -97,6 +98,7 @@ All configuration is via environment variables, set in `docker-compose.yml`.
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker socket for the container count. |
 | `PORTAINER_API_KEY` | — | Portainer API access token sent using `X-API-Key`; required for Compose stack lookup and redeploy. |
 | `DOCKER_COMPOSE` | — | GitHub Compose source URL including its site directory, e.g. `https://github.com/mayberryjp/dockercompose/house` or `/farm`. |
+| `GITHUB_API_TOKEN` | — | GitHub token with read access to the private Compose repository, used to compare the deployed commit's Compose file with the configured branch. |
 | `COMPOSE_CACHE_TTL_SECONDS` | `300` | How long the Docker/Portainer Compose inventory is cached. Use the dashboard's **refresh** button to force an immediate refresh. |
 | `CONTAINER_BLOB` | — | URL(s) of the per-site container list (comma-separate multiple URLs to merge them); the container name is the first DNS label of each line's 2nd comma-separated field (`<target>,<container>.<domain>,<ttl>`). |
 | `UPTIME_KUMA_V2_API_BASE_URL` | — | Base URL of [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api), e.g. `http://uptimekuma-v2-api:12000`. |
@@ -117,11 +119,12 @@ trigger one docker-updater update, delete one unused image, or delete an unexpec
 Uptime Kuma monitor. A confirmed header action deletes all Uptime Kuma monitors. These
 are unauthenticated `POST` actions, so only expose this service on a trusted network.
 
-Compose rows are matched to Portainer Git stacks using the live Compose project/file
-labels, the configured repository, and source slug. Git-linked rows offer **pull &
-redeploy** through Portainer with `RepullImageAndRedeploy` disabled; local Compose and
-unmanaged containers are shown without that action. Configure a Portainer API token
-with permission to view and update the relevant stacks.
+Compose rows are matched to Portainer Git stacks using live Compose file labels, the
+configured repository, and source directory. `/summary` reports GitHub-managed,
+changed, unlinked Compose, unmanaged, and unverified containers. Git-linked rows with
+changes or an unavailable comparison offer **pull & redeploy** through Portainer with
+`RepullImageAndRedeploy` disabled. Configure a Portainer API token with permission to
+view/update stacks and a GitHub token with read access to the private Compose repo.
 
 The Docker check reads the mounted socket, and the **delete image** action writes to it
 (image remove), so the socket is mounted read-write. The image runs as a non-root user,

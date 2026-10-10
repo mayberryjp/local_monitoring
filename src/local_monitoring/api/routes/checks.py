@@ -40,7 +40,11 @@ def _run(collector: Collector) -> dict[str, Any]:
 def register_check_routes(app: Bottle) -> None:
     @app.get("/summary")
     def summary() -> dict[str, Any]:
-        return {"status": "ok", "checks": collect_all()}
+        force_compose_refresh = request.query.get("refresh", "").lower() in {"1", "true", "yes"}
+        return {
+            "status": "ok",
+            "checks": collect_all(force_compose_refresh=force_compose_refresh),
+        }
 
     @app.get("/uptime-kuma")
     def uptime_kuma_check() -> dict[str, Any]:

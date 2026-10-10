@@ -132,8 +132,12 @@ _DASHBOARD_HTML = """<!doctype html>
         link: "kuma", note: "no docker monitor", dockerHost: true },
       { type: "Compose source", key: "compose_stacks", list: "containers", link: "portainer",
         map: function (i) {
-          var detail = i.source === "github" ? "GitHub: " + i.source_file :
-            (i.source === "local compose" ? "not linked to configured GitHub source" : "not managed by Compose");
+          if (i.source === "github" && i.drift_status === "current") return null;
+          var detail = i.source === "github"
+            ? (i.drift_status === "changed"
+              ? "GitHub Compose changed: " + i.source_file
+              : "GitHub comparison unavailable: " + (i.drift_detail || "unknown"))
+            : (i.source === "local compose" ? "not linked to configured GitHub source" : "not managed by Compose");
           return {
             issue: i.name + " · " + detail,
             target: i.name,
@@ -187,8 +191,7 @@ _DASHBOARD_HTML = """<!doctype html>
         '" target="_blank" rel="noopener noreferrer">open \u2197</a>';
     }
 
-    function rowHtml(card, item) {
-      var mapped = card.map ? card.map(item) : { issue: item, target: item };
+    function rowHtml(card, item, mapped) {
       var issue = escapeHtml(mapped.issue);
       if (card.note) issue += ' <span class="sub">\u00b7 ' + escapeHtml(card.note) + "</span>";
       var act = "";
@@ -242,7 +245,12 @@ _DASHBOARD_HTML = """<!doctype html>
           return;
         }
         var items = Array.isArray(check[card.list]) ? check[card.list] : [];
-        items.forEach(function (item) { issues++; html += rowHtml(card, item); });
+        items.forEach(function (item) {
+          var mapped = card.map ? card.map(item) : { issue: item, target: item };
+          if (!mapped) return;
+          issues++;
+          html += rowHtml(card, item, mapped);
+        });
       });
       rowsEl.innerHTML = html;
       var hasRows = (issues + errors) > 0;
@@ -347,26 +355,18 @@ _DASHBOARD_HTML = """<!doctype html>
       if (refreshBtn.disabled) return;
       refreshBtn.disabled = true;
       refreshBtn.textContent = "refreshing\u2026";
-      var composeUrl = "/compose-stacks" + (forceCompose ? "?refresh=true" : "");
+      var summaryUrl = "/summary" + (forceCompose ? "?refresh=true" : "");
       Promise.all([
-        fetch("/summary", { cache: "no-store" }).then(function (r) { return r.json(); }),
+        fetch(summaryUrl, { cache: "no-store" }).then(function (r) { return r.json(); }),
         fetch("/docker-hosts", { cache: "no-store" }).then(function (r) {
-          return r.json().then(function (data) { return { ok: r.ok, data: data }; });
-        }).catch(function (e) { return { ok: false, data: { error: String(e) } }; }),
-        fetch(composeUrl, { cache: "no-store" }).then(function (r) {
           return r.json().then(function (data) { return { ok: r.ok, data: data }; });
         }).catch(function (e) { return { ok: false, data: { error: String(e) } }; })
       ]).then(function (results) {
         var data = results[0];
         var hostsResult = results[1];
-        var composeResult = results[2];
         DOCKER_HOSTS = hostsResult.ok && Array.isArray(hostsResult.data.hosts) ? hostsResult.data.hosts : [];
         DOCKER_HOSTS_ERROR = hostsResult.ok ? "" : (hostsResult.data.error || "Docker hosts unavailable");
         MONITOR_TOTAL = data.checks && data.checks.uptime_kuma ? data.checks.uptime_kuma.total : null;
-        data.checks = data.checks || {};
-        data.checks.compose_stacks = composeResult.ok
-          ? { status: "ok", containers: composeResult.data.containers || [] }
-          : { status: "error", error: composeResult.data.error || "Compose source status unavailable" };
         setStatus(render(data.checks || {}));
         footer.textContent = "updated " + new Date().toLocaleTimeString() + " \u00b7 auto every 5m";
       }).catch(function (e) {

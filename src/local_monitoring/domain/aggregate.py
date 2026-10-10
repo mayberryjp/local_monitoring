@@ -15,6 +15,7 @@ from local_monitoring.domain import (
     docker_monitors,
     docker_updater,
     ping_monitors,
+    portainer_stacks,
     uptime_kuma,
     webdav,
 )
@@ -34,6 +35,7 @@ CHECK_MODULES: dict[str, ModuleType] = {
     "additional_monitors": additional_monitors,
     "allowlist": allowlist,
     "docker_images": docker_images,
+    "compose_stacks": portainer_stacks,
 }
 
 
@@ -48,11 +50,15 @@ def run_check(collector: Collector) -> dict[str, Any]:
         return result
 
 
-def collect_all() -> dict[str, Any]:
+def collect_all(force_compose_refresh: bool = False) -> dict[str, Any]:
     """Invoke every check in parallel threads and return a keyed result object."""
     with ThreadPoolExecutor(max_workers=len(CHECK_MODULES)) as executor:
-        futures = {
-            name: executor.submit(run_check, module.collect)
-            for name, module in CHECK_MODULES.items()
-        }
+        futures = {}
+        for name, module in CHECK_MODULES.items():
+            collector = module.collect
+            if name == "compose_stacks":
+                collector = lambda module=module: module.collect(
+                    force_refresh=force_compose_refresh
+                )
+            futures[name] = executor.submit(run_check, collector)
         return {name: future.result() for name, future in futures.items()}

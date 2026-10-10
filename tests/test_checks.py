@@ -47,6 +47,11 @@ def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(additional_monitors, "collect", lambda: {"additional": 2})
     monkeypatch.setattr(allowlist, "collect", lambda: {"unmatched": 1})
     monkeypatch.setattr(docker_images, "collect", lambda: {"unused": 2, "total": 25})
+    monkeypatch.setattr(
+        portainer_stacks,
+        "collect",
+        lambda force_refresh=False: {"containers": []},
+    )
 
     resp = client.get("/summary")
 
@@ -62,9 +67,26 @@ def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatc
         "additional_monitors",
         "allowlist",
         "docker_images",
+        "compose_stacks",
     }
     assert checks["uptime_kuma"] == {"status": "ok", "up": 2, "down": 1, "total": 3}
     assert checks["docker_updater"]["pending_updates"] == 4
+    assert checks["compose_stacks"] == {"status": "ok", "containers": []}
+
+
+def test_summary_force_refresh_passes_to_compose_check(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    refresh_values: list[bool] = []
+    monkeypatch.setattr(
+        portainer_stacks,
+        "collect",
+        lambda force_refresh=False: refresh_values.append(force_refresh) or {"containers": []},
+    )
+    resp = client.get("/summary?refresh=true")
+    assert resp.status_code == 200
+    assert resp.json["checks"]["compose_stacks"]["status"] == "ok"
+    assert refresh_values == [True]
 
 
 def test_summary_reports_partial_failure(
@@ -148,14 +170,14 @@ def test_summary_handles_non_json_uptime_kuma_response(
     monkeypatch.setattr(uptime_kuma.settings, "uptime_kuma_base_url", "http://kuma")
     monkeypatch.setattr(uptime_kuma.settings, "uptime_kuma_slug", "mine")
     monkeypatch.setattr(requests, "get", lambda *a, **k: _InvalidJsonResponse())
-    monkeypatch.setattr(webdav, "collect", lambda: {})
-    monkeypatch.setattr(docker_updater, "collect", lambda: {})
-    monkeypatch.setattr(docker_containers, "collect", lambda: {})
-    monkeypatch.setattr(docker_monitors, "collect", lambda: {})
-    monkeypatch.setattr(ping_monitors, "collect", lambda: {})
-    monkeypatch.setattr(additional_monitors, "collect", lambda: {})
-    monkeypatch.setattr(allowlist, "collect", lambda: {})
-    monkeypatch.setattr(docker_images, "collect", lambda: {})
+    monkeypatch.setattr(webdav, "collect", dict)
+    monkeypatch.setattr(docker_updater, "collect", dict)
+    monkeypatch.setattr(docker_containers, "collect", dict)
+    monkeypatch.setattr(docker_monitors, "collect", dict)
+    monkeypatch.setattr(ping_monitors, "collect", dict)
+    monkeypatch.setattr(additional_monitors, "collect", dict)
+    monkeypatch.setattr(allowlist, "collect", dict)
+    monkeypatch.setattr(docker_images, "collect", dict)
 
     resp = client.get("/summary")
 
@@ -856,7 +878,7 @@ def test_portainer_redeploy_matches_git_stack_and_disables_image_pull(
     stack = {
         "Id": 42,
         "EndpointId": 4,
-        "Name": "localmonitoring",
+        "Name": "portainer-stack-name-differs",
         "ProjectPath": "/data/compose/31",
         "Env": [{"name": "SITE", "value": "house"}],
         "Option": {"Prune": True},
@@ -899,7 +921,7 @@ def test_portainer_redeploy_matches_git_stack_and_disables_image_pull(
 
     assert portainer_stacks.redeploy_for_container("localmonitoring") == {
         "container": "localmonitoring",
-        "stack": "localmonitoring",
+        "stack": "portainer-stack-name-differs",
         "stack_id": 42,
         "source_file": "house/localmonitoring.yml",
         "image_pull": False,
@@ -970,6 +992,105 @@ def test_compose_source_directory_selects_site(monkeypatch: pytest.MonkeyPatch) 
     assert portainer_stacks._stack_for_container(container, [wrong_site]) is None
 
 
+def test_compose_inventory_classifies_linked_local_and_unmanaged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(portainer_stacks.settings, "portainer_url", "http://portainer:9000")
+    monkeypatch.setattr(portainer_stacks.settings, "portainer_api_key", "secret")
+    monkeypatch.setattr(
+        portainer_stacks.settings,
+        "docker_compose",
+        "https://github.com/mayberryjp/dockercompose/house",
+    )
+    monkeypatch.setattr(
+        portainer_stacks,
+        "_container_rows",
+        lambda: [
+            {
+                "name": "git-app",
+                "project": "generated-compose-project",
+                "service": "api",
+                "config_files": "/data/compose/4/house/app.yml",
+                "working_dir": "/data/compose/4/house",
+            },
+            {
+                "name": "local-app",
+                "project": "local-app",
+                "service": "app",
+                "config_files": "/opt/local/compose.yml",
+                "working_dir": "/opt/local",
+            },
+            {"name": "manual", "project": None, "service": None, "config_files": ""},
+        ],
+    )
+    monkeypatch.setattr(
+        portainer_stacks,
+        "_request_json",
+        lambda *a, **k: [
+            {
+                "Id": 10,
+                "EndpointId": 1,
+                "Name": "portainer-stack-name-differs",
+                "GitConfig": {
+                    "URL": "https://github.com/mayberryjp/dockercompose.git",
+                    "ConfigFilePath": "house/app.yml",
+                },
+            }
+        ],
+    )
+
+    result = portainer_stacks._collect_uncached()["containers"]
+    assert [(row["source"], row["github_managed"]) for row in result] == [
+        ("github", True),
+        ("local compose", False),
+        ("unmanaged", False),
+    ]
+    assert result[0]["can_redeploy"] is True
+
+
+@pytest.mark.parametrize(
+    ("changed_path", "expected_status"),
+    [("house/app.yml", "changed"), ("house/other.yml", "current")],
+)
+def test_compose_drift_checks_only_the_stack_compose_file(
+    monkeypatch: pytest.MonkeyPatch, changed_path: str, expected_status: str
+) -> None:
+    request: dict[str, Any] = {}
+
+    def fake_get(url: str, *a: Any, **kwargs: Any) -> _FakeResponse:
+        request.update(url=url, headers=kwargs.get("headers"))
+        return _FakeResponse(200, {"status": "ahead", "files": [{"filename": changed_path}]})
+
+    monkeypatch.setattr(portainer_stacks.settings, "github_api_token", "gh-token")
+    monkeypatch.setattr(
+        portainer_stacks.settings,
+        "docker_compose",
+        "https://github.com/mayberryjp/dockercompose/house",
+    )
+    monkeypatch.setattr(portainer_stacks.requests, "get", fake_get)
+    stack = {
+        "GitConfig": {
+            "ConfigHash": "deployed123",
+            "ReferenceName": "refs/heads/main",
+            "ConfigFilePath": "house/app.yml",
+        }
+    }
+
+    assert portainer_stacks._compose_drift(stack)["status"] == expected_status
+    assert "/repos/mayberryjp/dockercompose/compare/deployed123...main" in request["url"]
+    assert request["headers"]["Authorization"] == "Bearer gh-token"
+
+
+def test_compose_drift_is_unknown_without_github_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(portainer_stacks.settings, "github_api_token", "")
+    assert portainer_stacks._compose_drift({"GitConfig": {}}) == {
+        "status": "unknown",
+        "detail": "GITHUB_API_TOKEN is not configured",
+    }
+
+
 def test_dashboard_shows_monitor_actions(client: TestApp) -> None:
     resp = client.get("/")
     assert resp.status_code == 200
@@ -977,7 +1098,9 @@ def test_dashboard_shows_monitor_actions(client: TestApp) -> None:
     assert 'data-url="/actions/add-docker-monitor"' in resp.text
     assert 'url: "/actions/redeploy-compose"' in resp.text
     assert 'var REFRESH_MS = 300000;' in resp.text
-    assert 'var composeUrl = "/compose-stacks"' in resp.text
+    assert 'var summaryUrl = "/summary"' in resp.text
+    assert 'fetch(summaryUrl, { cache: "no-store" })' in resp.text
+    assert 'fetch(composeUrl' not in resp.text
     assert 'refreshBtn.addEventListener("click", function () { refresh(true); });' in resp.text
 
 

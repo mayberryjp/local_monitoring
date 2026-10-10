@@ -27,6 +27,7 @@ services:
       # Portainer API for Git-stack lookup and pull/redeploy actions.
       PORTAINER_API_KEY: ""
       DOCKER_COMPOSE: https://github.com/mayberryjp/dockercompose/house
+      GITHUB_API_TOKEN: ""
       COMPOSE_CACHE_TTL_SECONDS: "300"
 
       # 5) Per-site container list -> Uptime Kuma v2 docker-monitor coverage

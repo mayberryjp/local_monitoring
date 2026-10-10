@@ -11,7 +11,7 @@ from local_monitoring.config import settings
 from local_monitoring.domain.errors import CheckError
 
 
-def _status_page_slug(value: str) -> str:
+def status_page_slug(value: str) -> str:
     """Accept either a Kuma status-page slug or its full `/status/<slug>` URL."""
     configured = value.strip()
     parsed = urlparse(configured)
@@ -52,7 +52,7 @@ def collect() -> dict[str, Any]:
         raise CheckError("not_configured", "uptime-kuma is not configured")
 
     base_url = settings.uptime_kuma_base_url.rstrip("/")
-    slug = _status_page_slug(settings.uptime_kuma_slug)
+    slug = status_page_slug(settings.uptime_kuma_slug)
     if not slug:
         raise CheckError("not_configured", "uptime-kuma status-page slug is invalid")
     url = f"{base_url}/api/status-page/heartbeat/{slug}"

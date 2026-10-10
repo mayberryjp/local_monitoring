@@ -18,6 +18,7 @@ from local_monitoring.domain import (
     docker_updater,
     ping_monitors,
     portainer_stacks,
+    status_page_monitors,
     uptime_kuma,
     uptime_kuma_v2,
     webdav,
@@ -52,6 +53,11 @@ def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatc
         "collect",
         lambda force_refresh=False: {"containers": []},
     )
+    monkeypatch.setattr(
+        status_page_monitors,
+        "collect",
+        lambda: {"status_page": "mine", "listed": True, "missing": 0, "unlisted_monitors": []},
+    )
 
     resp = client.get("/summary")
 
@@ -68,10 +74,12 @@ def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatc
         "allowlist",
         "docker_images",
         "compose_stacks",
+        "status_page_monitors",
     }
     assert checks["uptime_kuma"] == {"status": "ok", "up": 2, "down": 1, "total": 3}
     assert checks["docker_updater"]["pending_updates"] == 4
     assert checks["compose_stacks"] == {"status": "ok", "containers": []}
+    assert checks["status_page_monitors"]["listed"] is True
 
 
 def test_summary_force_refresh_passes_to_compose_check(
@@ -106,6 +114,7 @@ def test_summary_reports_partial_failure(
     monkeypatch.setattr(additional_monitors, "collect", lambda: {"additional": 0})
     monkeypatch.setattr(allowlist, "collect", lambda: {"unmatched": 0})
     monkeypatch.setattr(docker_images, "collect", lambda: {"unused": 0, "total": 10})
+    monkeypatch.setattr(status_page_monitors, "collect", dict)
 
     resp = client.get("/summary")
 
@@ -137,6 +146,21 @@ def test_individual_check_error_returns_503(
     assert resp.status_code == 503
     assert resp.json["status"] == "error"
     assert resp.json["code"] == "not_configured"
+
+
+def test_status_page_monitors_check_endpoint(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = {
+        "status_page": "mine",
+        "listed": False,
+        "missing": 1,
+        "unlisted_monitors": [{"id": 5, "name": "Monitor Five", "type": "http"}],
+    }
+    monkeypatch.setattr(status_page_monitors, "collect", lambda: result)
+    resp = client.get("/status-page-monitors")
+    assert resp.status_code == 200
+    assert resp.json == {"status": "ok", **result}
 
 
 def test_uptime_kuma_counts_up_and_down(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -184,6 +208,76 @@ def test_uptime_kuma_accepts_full_status_page_url_as_slug(
     assert requested == [
         "http://uptimekuma.azure.farm:3001/api/status-page/heartbeat/allstatus"
     ]
+
+
+def test_status_page_monitor_check_finds_missing_monitor_by_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        status_page_monitors.settings,
+        "uptime_kuma_v2_api_base_url",
+        "http://kuma-v2:12000",
+    )
+    monkeypatch.setattr(status_page_monitors.settings, "uptime_kuma_base_url", "http://kuma:3001")
+    monkeypatch.setattr(status_page_monitors.settings, "uptime_kuma_slug", "mine")
+    monkeypatch.setattr(
+        uptime_kuma_v2,
+        "fetch_monitors",
+        lambda *a, **k: [
+            {"id": 1, "name": "Included", "type": "http"},
+            {"id": 2, "name": "Missing", "type": "docker"},
+        ],
+    )
+    monkeypatch.setattr(
+        status_page_monitors.requests,
+        "get",
+        lambda *a, **k: _FakeResponse(
+            200,
+            {"publicGroupList": [{"monitorList": [{"id": 1, "name": "Included"}]}]},
+        ),
+    )
+
+    assert status_page_monitors.collect() == {
+        "status_page": "mine",
+        "listed": False,
+        "missing": 1,
+        "unlisted_monitors": [{"id": 2, "name": "Missing", "type": "docker"}],
+    }
+
+
+def test_status_page_action_adds_only_selected_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, *a: Any, **kwargs: Any) -> _FakeResponse:
+        captured.update(url=url, headers=kwargs.get("headers"), json=kwargs.get("json"))
+        return _FakeResponse(200, {"ok": True, "added": [2], "skipped": []})
+
+    monkeypatch.setattr(
+        status_page_monitors.settings,
+        "uptime_kuma_v2_api_base_url",
+        "http://kuma-v2:12000",
+    )
+    monkeypatch.setattr(status_page_monitors.settings, "uptime_kuma_v2_api_key", "secret")
+    monkeypatch.setattr(
+        status_page_monitors,
+        "_missing_monitors",
+        lambda: ("mine", [{"id": 2, "name": "Missing", "type": "docker"}]),
+    )
+    monkeypatch.setattr(status_page_monitors.requests, "post", fake_post)
+
+    assert status_page_monitors.add_monitor(2) == {
+        "added": "Missing",
+        "monitor_id": 2,
+        "status_page": "mine",
+        "message": None,
+    }
+    assert captured == {
+        "url": "http://kuma-v2:12000/v1/statuspages/mine/monitors",
+        "headers": {"X-API-Key": "secret"},
+        "json": {"monitor_ids": [2]},
+    }
 
 
 def test_summary_handles_non_json_uptime_kuma_response(
@@ -835,6 +929,25 @@ def test_action_clear_heartbeats_endpoint(
     }
 
 
+def test_action_add_status_page_monitor_endpoint(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    added: list[int] = []
+    monkeypatch.setattr(
+        status_page_monitors,
+        "add_monitor",
+        lambda monitor_id: added.append(monitor_id) or {"added": "Monitor Five", "monitor_id": monitor_id},
+    )
+    resp = client.post_json("/actions/add-status-page-monitor", {"monitor_id": 5})
+    assert resp.status_code == 200
+    assert resp.json == {
+        "status": "ok",
+        "added": "Monitor Five",
+        "monitor_id": 5,
+    }
+    assert added == [5]
+
+
 def test_action_redeploy_compose_endpoint(
     client: TestApp, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1192,6 +1305,8 @@ def test_dashboard_shows_monitor_actions(client: TestApp) -> None:
     assert "Monitor definitions will remain" in resp.text
     assert 'data-url="/actions/add-docker-monitor"' in resp.text
     assert 'url: "/actions/redeploy-compose"' in resp.text
+    assert 'url: "/actions/add-status-page-monitor"' in resp.text
+    assert 'key: "status_page_monitors"' in resp.text
     assert 'var REFRESH_MS = 300000;' in resp.text
     assert 'var summaryUrl = "/summary"' in resp.text
     assert 'fetch(summaryUrl, { cache: "no-store" })' in resp.text

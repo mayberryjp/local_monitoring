@@ -29,8 +29,9 @@ when the aggregate endpoint is called.
 | `GET` | `/` | HTML status page rendering the down monitors, stopped containers, pending updates, unmonitored containers, and unused images. |
 | `GET` | `/health` | Process liveness. |
 | `GET` | `/ready` | Readiness (always ok — downstreams are checked per request). |
-| `GET` | `/summary` | All ten checks in one object, run in parallel. Add `?refresh=true` to bypass the Compose inventory cache. |
+| `GET` | `/summary` | All eleven checks in one object, run in parallel. Add `?refresh=true` to bypass the Compose inventory cache. |
 | `GET` | `/uptime-kuma` | Uptime Kuma up/down counter. |
+| `GET` | `/status-page-monitors` | Uptime Kuma monitors not included in the configured public status page. |
 | `GET` | `/webdav` | WebDAV file freshness. |
 | `GET` | `/docker-updater` | docker-updater pending-update count. |
 | `GET` | `/docker` | Running/stopped container count. |
@@ -47,6 +48,7 @@ when the aggregate endpoint is called.
 | `POST` | `/actions/delete-image` | Delete one unused image (JSON body `{"image": ...}`). |
 | `POST` | `/actions/add-ping-monitor` | Create an Uptime Kuma v2 ping monitor for one device (JSON body `{"device": ...}`). |
 | `POST` | `/actions/add-docker-monitor` | Create a Docker monitor for one uncovered container (JSON body `{"container": ..., "host_id": ...}`). |
+| `POST` | `/actions/add-status-page-monitor` | Add one existing Uptime Kuma monitor to the configured status page (JSON body `{"monitor_id": ...}`). |
 | `POST` | `/actions/clear-heartbeats` | Clear heartbeat history and aggregate uptime statistics for every Uptime Kuma v2 monitor; monitor definitions are retained. |
 | `POST` | `/actions/redeploy-compose` | Pull and redeploy the Portainer Git stack mapped to a container (JSON body `{"container": ...}`); does not force image pulling. |
 | `POST` | `/actions/delete-monitor` | Delete one additional Uptime Kuma v2 monitor (JSON body `{"name": ...}`). |
@@ -64,6 +66,7 @@ Example `/summary`:
   "status": "ok",
   "checks": {
     "uptime_kuma": {"status": "ok", "up": 12, "down": 1, "total": 13, "down_monitors": ["Database"]},
+    "status_page_monitors": {"status": "ok", "status_page": "my-status-page", "listed": false, "missing": 1, "unlisted_monitors": [{"id": 7, "name": "New service", "type": "http"}]},
     "webdav": {"status": "ok", "result": "OK", "recent": true, "timestamp": "2026-09-14T08:12:00-04:00", "age_hours": 1.2, "threshold_hours": 24.0},
     "docker_updater": {"status": "ok", "pending_updates": 3, "pending_images": ["nginx:latest", "ghcr.io/owner/app:main", "redis:7"], "pending_containers": [{"name": "web", "image": "nginx:latest"}]},
     "docker_containers": {"status": "ok", "running": 21, "stopped": 2, "total": 23, "stopped_containers": ["backup-runner", "old-db"]},
@@ -114,7 +117,8 @@ The dashboard is a dark "actions dashboard": a single table with **Monitor type*
 hidden. Every row's action cell links to the relevant web UI (reusing the section URLs
 above). Uncovered containers have a Docker-host selector and **add monitor** action;
 uncovered devices can also get a ping monitor. Newly created monitors are added to the
-configured Uptime Kuma status page. Other row actions start/delete stopped containers,
+configured Uptime Kuma status page, and existing monitors missing from that page have
+an **add to page** action. Other row actions start/delete stopped containers,
 trigger one docker-updater update, delete one unused image, or delete an unexpected
 Uptime Kuma monitor. A confirmed header action clears all monitor heartbeat history and
 aggregate uptime statistics without deleting monitor definitions. These are

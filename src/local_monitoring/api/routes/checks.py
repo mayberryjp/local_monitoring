@@ -16,6 +16,7 @@ from local_monitoring.domain import (
     docker_updater,
     ping_monitors,
     portainer_stacks,
+    status_page_monitors,
     uptime_kuma,
     uptime_kuma_v2,
     webdav,
@@ -49,6 +50,10 @@ def register_check_routes(app: Bottle) -> None:
     @app.get("/uptime-kuma")
     def uptime_kuma_check() -> dict[str, Any]:
         return _run(uptime_kuma.collect)
+
+    @app.get("/status-page-monitors")
+    def status_page_monitors_check() -> dict[str, Any]:
+        return _run(status_page_monitors.collect)
 
     @app.get("/webdav")
     def webdav_check() -> dict[str, Any]:

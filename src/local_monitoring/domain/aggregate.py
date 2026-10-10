@@ -16,6 +16,7 @@ from local_monitoring.domain import (
     docker_updater,
     ping_monitors,
     portainer_stacks,
+    status_page_monitors,
     uptime_kuma,
     webdav,
 )
@@ -36,6 +37,7 @@ CHECK_MODULES: dict[str, ModuleType] = {
     "allowlist": allowlist,
     "docker_images": docker_images,
     "compose_stacks": portainer_stacks,
+    "status_page_monitors": status_page_monitors,
 }
 
 

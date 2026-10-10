@@ -125,6 +125,10 @@ _DASHBOARD_HTML = """<!doctype html>
     var LINKS = __LINKS_JSON__;
     var CARDS = [
       { type: "Monitor", key: "uptime_kuma", list: "down_monitors", link: "kuma", note: "down" },
+      { type: "Status page", key: "status_page_monitors", list: "unlisted_monitors", link: "kuma",
+        note: "not on status page",
+        action: { url: "/actions/add-status-page-monitor", label: "add to page", field: "monitor_id" },
+        map: function (i) { return { issue: i.name, target: i.id }; } },
       { type: "Ping", key: "ping_monitors", list: "unmonitored_devices", link: "kuma",
         note: "no ping monitor",
         action: { url: "/actions/add-ping-monitor", label: "add monitor", field: "device" } },
@@ -273,6 +277,7 @@ _DASHBOARD_HTML = """<!doctype html>
     }
 
     function describeAction(url, target, d) {
+      if (url.indexOf("add-status-page-monitor") >= 0) return "added " + (d.added || target) + " to the status page";
       if (url.indexOf("redeploy-compose") >= 0) return "Git Compose redeploy requested for " + (d.container || target);
       if (url.indexOf("add-ping-monitor") >= 0) return "created monitor " + (d.created || target);
       if (url.indexOf("delete-monitor") >= 0) return "deleted monitor " + (d.deleted || target);

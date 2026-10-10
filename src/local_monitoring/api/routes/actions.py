@@ -15,6 +15,7 @@ from local_monitoring.domain import (
     docker_updater,
     ping_monitors,
     portainer_stacks,
+    status_page_monitors,
     uptime_kuma_v2,
 )
 from local_monitoring.domain.errors import CheckError
@@ -92,6 +93,18 @@ def register_action_routes(app: Bottle) -> None:
     @app.post("/actions/clear-heartbeats")
     def clear_heartbeats() -> dict[str, Any]:
         return _run(uptime_kuma_v2.clear_all_heartbeats)
+
+    @app.post("/actions/add-status-page-monitor")
+    def add_status_page_monitor() -> dict[str, Any]:
+        monitor_id = _target("monitor_id")
+        if not monitor_id:
+            return _missing("monitor_id")
+        try:
+            parsed_monitor_id = int(monitor_id)
+        except ValueError:
+            response.status = 400
+            return {"status": "error", "code": "invalid_request", "error": "monitor_id must be an integer"}
+        return _run(lambda: status_page_monitors.add_monitor(parsed_monitor_id))
 
     @app.post("/actions/redeploy-compose")
     def redeploy_compose() -> dict[str, Any]:

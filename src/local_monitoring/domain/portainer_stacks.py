@@ -187,6 +187,7 @@ def _container_rows() -> list[dict[str, Any]]:
                 "working_dir": (container.labels or {}).get(WORKING_DIR_LABEL, ""),
             }
             for container in containers
+            if container.name.casefold() != "portainer"  # Portainer can't manage itself via a stack
         ]
     except DockerException as exc:
         raise CheckError("docker_unreachable", "docker container listing failed", str(exc)) from exc

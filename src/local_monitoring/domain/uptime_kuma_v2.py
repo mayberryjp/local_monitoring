@@ -142,35 +142,36 @@ def create_monitor(payload: dict[str, Any]) -> dict[str, Any]:
     return {"monitor_id": monitor_id, "status_page": slug}
 
 
-def delete_all_monitors() -> dict[str, Any]:
-    """Delete every monitor returned by the live Uptime Kuma v2 monitor list."""
+def clear_all_heartbeats() -> dict[str, Any]:
+    """Clear heartbeat history and aggregate uptime statistics for all monitors."""
     base_url = settings.uptime_kuma_v2_api_base_url.rstrip("/")
     if not base_url:
         raise CheckError("not_configured", "uptime-kuma-v2-api is not configured")
 
-    monitors = fetch_monitors(base_url, settings.uptime_kuma_v2_api_key)
-    headers = {"X-API-Key": settings.uptime_kuma_v2_api_key}
-    deleted = 0
-    failed: list[dict[str, Any]] = []
-    for monitor in monitors:
-        monitor_id = monitor.get("id")
-        if monitor_id is None:
-            failed.append({"name": monitor.get("name"), "error": "monitor id missing"})
-            continue
-        try:
-            resp = requests.delete(
-                f"{base_url}/v1/monitors/{monitor_id}",
-                headers=headers,
-                timeout=settings.http_timeout_seconds,
-            )
-        except requests.RequestException as exc:
-            failed.append({"id": monitor_id, "error": str(exc)})
-            continue
-        if resp.status_code == 200:
-            deleted += 1
-        else:
-            failed.append({"id": monitor_id, "error": f"HTTP {resp.status_code}"})
-    return {"deleted": deleted, "total": len(monitors), "failed": failed}
+    try:
+        resp = requests.delete(
+            f"{base_url}/v1/beats",
+            headers={"X-API-Key": settings.uptime_kuma_v2_api_key},
+            timeout=settings.http_timeout_seconds,
+        )
+    except requests.RequestException as exc:
+        raise CheckError(
+            "upstream_unreachable", "uptime-kuma-v2-api clear-heartbeats request failed", str(exc)
+        ) from exc
+    if resp.status_code != 200:
+        raise CheckError(
+            "upstream_error",
+            f"uptime-kuma-v2-api clear-heartbeats returned HTTP {resp.status_code}",
+        )
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {}
+    message = body.get("msg") if isinstance(body, dict) else None
+    return {
+        "cleared": True,
+        "message": message or "all monitor heartbeats and uptime statistics cleared",
+    }
 
 
 def last_token(name: str) -> str:

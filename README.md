@@ -47,7 +47,7 @@ when the aggregate endpoint is called.
 | `POST` | `/actions/delete-image` | Delete one unused image (JSON body `{"image": ...}`). |
 | `POST` | `/actions/add-ping-monitor` | Create an Uptime Kuma v2 ping monitor for one device (JSON body `{"device": ...}`). |
 | `POST` | `/actions/add-docker-monitor` | Create a Docker monitor for one uncovered container (JSON body `{"container": ..., "host_id": ...}`). |
-| `POST` | `/actions/delete-all-monitors` | Delete every Uptime Kuma v2 monitor. |
+| `POST` | `/actions/clear-heartbeats` | Clear heartbeat history and aggregate uptime statistics for every Uptime Kuma v2 monitor; monitor definitions are retained. |
 | `POST` | `/actions/redeploy-compose` | Pull and redeploy the Portainer Git stack mapped to a container (JSON body `{"container": ...}`); does not force image pulling. |
 | `POST` | `/actions/delete-monitor` | Delete one additional Uptime Kuma v2 monitor (JSON body `{"name": ...}`). |
 | `POST` | `/actions/start-container` | Start one stopped container (JSON body `{"name": ...}`). |
@@ -116,8 +116,9 @@ above). Uncovered containers have a Docker-host selector and **add monitor** act
 uncovered devices can also get a ping monitor. Newly created monitors are added to the
 configured Uptime Kuma status page. Other row actions start/delete stopped containers,
 trigger one docker-updater update, delete one unused image, or delete an unexpected
-Uptime Kuma monitor. A confirmed header action deletes all Uptime Kuma monitors. These
-are unauthenticated `POST` actions, so only expose this service on a trusted network.
+Uptime Kuma monitor. A confirmed header action clears all monitor heartbeat history and
+aggregate uptime statistics without deleting monitor definitions. These are
+unauthenticated `POST` actions, so only expose this service on a trusted network.
 
 Compose rows are matched to Portainer Git stacks using live Compose file labels, the
 configured repository, and source directory. `/summary` reports GitHub-managed,

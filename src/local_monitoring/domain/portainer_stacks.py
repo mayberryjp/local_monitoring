@@ -76,10 +76,20 @@ def _compose_source() -> tuple[str, tuple[str, ...]]:
     return repo, parts[2:]
 
 
-def _compose_drift(stack: dict[str, Any]) -> dict[str, str]:
+def _deployment_metadata(stack: dict[str, Any]) -> tuple[str, str, str, tuple[str, ...]]:
     git_config = stack.get("GitConfig") or {}
-    deployed_commit = str(git_config.get("ConfigHash") or "")
-    reference = str(git_config.get("ReferenceName") or "")
+    deployment = stack.get("CurrentDeploymentInfo") or {}
+    deployed_commit = str(deployment.get("ConfigHash") or git_config.get("ConfigHash") or "")
+    reference = str(deployment.get("ReferenceName") or git_config.get("ReferenceName") or "")
+    config_path = str(
+        deployment.get("ConfigFilePath") or git_config.get("ConfigFilePath") or ""
+    )
+    additional_files = deployment.get("AdditionalFiles") or stack.get("AdditionalFiles") or []
+    return deployed_commit, reference, config_path, tuple(str(path) for path in additional_files)
+
+
+def _compose_drift(stack: dict[str, Any]) -> dict[str, str]:
+    deployed_commit, reference, config_path, additional_files = _deployment_metadata(stack)
     if not settings.github_api_token:
         return {"status": "unknown", "detail": "GITHUB_API_TOKEN is not configured"}
     if not deployed_commit or not reference:
@@ -120,9 +130,11 @@ def _compose_drift(stack: dict[str, Any]) -> dict[str, str]:
     if compare_status in {"behind", "diverged"}:
         return {"status": "changed", "detail": "configured Git reference differs from the deployed commit"}
 
-    git_config_path = str(git_config.get("ConfigFilePath") or "").replace("\\", "/").lstrip("./")
-    additional_files = stack.get("AdditionalFiles") or []
-    watched_paths = {git_config_path, *(str(path).replace("\\", "/").lstrip("./") for path in additional_files)}
+    compose_path = config_path.replace("\\", "/").lstrip("./")
+    watched_paths = {
+        compose_path,
+        *(path.replace("\\", "/").lstrip("./") for path in additional_files),
+    }
     changed_paths = {
         str(path)
         for item in comparison.get("files") or []
@@ -218,19 +230,15 @@ def _collect_uncached() -> dict[str, Any]:
         raise CheckError("upstream_error", "Portainer stack response was not a list")
 
     rows: list[dict[str, Any]] = []
-    drift_cache: dict[tuple[str, str, str], dict[str, str]] = {}
+    drift_cache: dict[tuple[str, ...], dict[str, str]] = {}
     for container in _container_rows():
         stack = _stack_for_container(container, stack_data)
         has_compose = bool(container.get("project"))
-        git_path = str((stack.get("GitConfig") or {}).get("ConfigFilePath") or "") if stack else ""
+        git_path = _deployment_metadata(stack)[2] if stack else ""
         drift = {"status": "not_applicable", "detail": ""}
         if stack:
-            git_config = stack.get("GitConfig") or {}
-            cache_key = (
-                str(git_config.get("ConfigHash") or ""),
-                str(git_config.get("ReferenceName") or ""),
-                git_path,
-            )
+            deployed_commit, reference, _, extra_paths = _deployment_metadata(stack)
+            cache_key = (deployed_commit, reference, git_path, *extra_paths)
             if cache_key not in drift_cache:
                 drift_cache[cache_key] = _compose_drift(stack)
             drift = drift_cache[cache_key]

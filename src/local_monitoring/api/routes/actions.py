@@ -89,9 +89,9 @@ def register_action_routes(app: Bottle) -> None:
             return {"status": "error", "code": "invalid_request", "error": "host_id must be an integer"}
         return _run(lambda: docker_monitors.add_docker_monitor(container, parsed_host_id))
 
-    @app.post("/actions/delete-all-monitors")
-    def delete_all_monitors() -> dict[str, Any]:
-        return _run(uptime_kuma_v2.delete_all_monitors)
+    @app.post("/actions/clear-heartbeats")
+    def clear_heartbeats() -> dict[str, Any]:
+        return _run(uptime_kuma_v2.clear_all_heartbeats)
 
     @app.post("/actions/redeploy-compose")
     def redeploy_compose() -> dict[str, Any]:

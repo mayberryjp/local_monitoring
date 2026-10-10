@@ -104,7 +104,7 @@ _DASHBOARD_HTML = """<!doctype html>
         <div class="tag">actions dashboard</div>
       </div>
       <div class="header-actions">
-        <button id="delete-all-monitors" class="danger" type="button">delete all Kuma monitors</button>
+        <button id="clear-all-heartbeats" class="danger" type="button">clear all monitor heartbeats</button>
         <button id="refresh" type="button">refresh</button>
       </div>
     </header>
@@ -167,7 +167,7 @@ _DASHBOARD_HTML = """<!doctype html>
     ];
 
     var refreshBtn = document.getElementById("refresh");
-    var deleteAllBtn = document.getElementById("delete-all-monitors");
+    var clearHeartbeatsBtn = document.getElementById("clear-all-heartbeats");
     var statusEl = document.getElementById("status");
     var statusText = document.getElementById("status-text");
     var board = document.getElementById("board");
@@ -176,7 +176,6 @@ _DASHBOARD_HTML = """<!doctype html>
     var footer = document.getElementById("footer");
     var DOCKER_HOSTS = [];
     var DOCKER_HOSTS_ERROR = "";
-    var MONITOR_TOTAL = null;
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, function (c) {
@@ -327,27 +326,23 @@ _DASHBOARD_HTML = """<!doctype html>
       });
     }
 
-    function deleteAllMonitors() {
-      var countText = MONITOR_TOTAL === null ? "all" : MONITOR_TOTAL;
-      if (!window.confirm("Permanently delete " + countText + " Uptime Kuma monitors? This cannot be undone.")) return;
-      deleteAllBtn.disabled = true;
-      deleteAllBtn.textContent = "deleting...";
-      fetch("/actions/delete-all-monitors", { method: "POST", cache: "no-store" }).then(function (r) {
+    function clearAllHeartbeats() {
+      if (!window.confirm("Clear heartbeat history and uptime statistics for all monitors? Monitor definitions will remain; active monitors may restart.")) return;
+      clearHeartbeatsBtn.disabled = true;
+      clearHeartbeatsBtn.textContent = "clearing...";
+      fetch("/actions/clear-heartbeats", { method: "POST", cache: "no-store" }).then(function (r) {
         return r.json().then(function (d) { return { ok: r.ok, data: d }; });
       }).then(function (res) {
         if (!res.ok || !res.data || res.data.status === "error") {
-          throw new Error(res.data && res.data.error ? res.data.error : "delete-all failed");
+          throw new Error(res.data && res.data.error ? res.data.error : "heartbeat clear failed");
         }
-        var failed = Array.isArray(res.data.failed) ? res.data.failed.length : 0;
-        footer.textContent = failed
-          ? "deleted " + res.data.deleted + " of " + res.data.total + " monitors; " + failed + " failed"
-          : "deleted " + res.data.deleted + " of " + res.data.total + " monitors";
+        footer.textContent = res.data.message || "all monitor heartbeats and uptime statistics cleared";
         refresh();
       }).catch(function (e) {
-        footer.textContent = "delete-all failed: " + e.message;
+        footer.textContent = "heartbeat clear failed: " + e.message;
       }).then(function () {
-        deleteAllBtn.disabled = false;
-        deleteAllBtn.textContent = "delete all Kuma monitors";
+        clearHeartbeatsBtn.disabled = false;
+        clearHeartbeatsBtn.textContent = "clear all monitor heartbeats";
       });
     }
 
@@ -366,7 +361,6 @@ _DASHBOARD_HTML = """<!doctype html>
         var hostsResult = results[1];
         DOCKER_HOSTS = hostsResult.ok && Array.isArray(hostsResult.data.hosts) ? hostsResult.data.hosts : [];
         DOCKER_HOSTS_ERROR = hostsResult.ok ? "" : (hostsResult.data.error || "Docker hosts unavailable");
-        MONITOR_TOTAL = data.checks && data.checks.uptime_kuma ? data.checks.uptime_kuma.total : null;
         setStatus(render(data.checks || {}));
         footer.textContent = "updated " + new Date().toLocaleTimeString() + " \u00b7 auto every 5m";
       }).catch(function (e) {
@@ -380,7 +374,7 @@ _DASHBOARD_HTML = """<!doctype html>
     }
 
     refreshBtn.addEventListener("click", function () { refresh(true); });
-    deleteAllBtn.addEventListener("click", deleteAllMonitors);
+    clearHeartbeatsBtn.addEventListener("click", clearAllHeartbeats);
     refresh();
     setInterval(refresh, REFRESH_MS);
   </script>

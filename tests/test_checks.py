@@ -548,31 +548,27 @@ def test_add_docker_monitor_creates_and_adds_to_status_page(
     assert all(call["headers"] == {"X-API-Key": "secret"} for call in posted)
 
 
-def test_delete_all_monitors_deletes_every_listed_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    deleted: list[str] = []
+def test_clear_all_heartbeats_uses_bulk_beats_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
 
     def fake_delete(url: str, *a: Any, **k: Any) -> _FakeResponse:
-        deleted.append(url)
-        return _FakeResponse(200, {"ok": True})
+        captured.update(url=url, headers=k.get("headers"))
+        return _FakeResponse(200, {"ok": True, "msg": "all heartbeats and uptime statistics cleared"})
 
     monkeypatch.setattr(
         uptime_kuma_v2.settings, "uptime_kuma_v2_api_base_url", "http://kuma-v2:12000"
     )
     monkeypatch.setattr(uptime_kuma_v2.settings, "uptime_kuma_v2_api_key", "secret")
-    monkeypatch.setattr(
-        requests,
-        "get",
-        lambda *a, **k: _FakeResponse(
-            200, {"monitors": [{"id": 1, "name": "A"}, {"id": 7, "name": "B"}]}
-        ),
-    )
     monkeypatch.setattr(requests, "delete", fake_delete)
 
-    assert uptime_kuma_v2.delete_all_monitors() == {"deleted": 2, "total": 2, "failed": []}
-    assert deleted == [
-        "http://kuma-v2:12000/v1/monitors/1",
-        "http://kuma-v2:12000/v1/monitors/7",
-    ]
+    assert uptime_kuma_v2.clear_all_heartbeats() == {
+        "cleared": True,
+        "message": "all heartbeats and uptime statistics cleared",
+    }
+    assert captured == {
+        "url": "http://kuma-v2:12000/v1/beats",
+        "headers": {"X-API-Key": "secret"},
+    }
 
 
 def test_additional_monitors_lists_uncovered(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -794,17 +790,21 @@ def test_action_add_docker_monitor_endpoint(
     assert captured == {"container": "web", "host_id": 2}
 
 
-def test_action_delete_all_monitors_endpoint(
+def test_action_clear_heartbeats_endpoint(
     client: TestApp, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
         uptime_kuma_v2,
-        "delete_all_monitors",
-        lambda: {"deleted": 3, "total": 3, "failed": []},
+        "clear_all_heartbeats",
+        lambda: {"cleared": True, "message": "all monitor heartbeats cleared"},
     )
-    resp = client.post_json("/actions/delete-all-monitors", {})
+    resp = client.post_json("/actions/clear-heartbeats", {})
     assert resp.status_code == 200
-    assert resp.json == {"status": "ok", "deleted": 3, "total": 3, "failed": []}
+    assert resp.json == {
+        "status": "ok",
+        "cleared": True,
+        "message": "all monitor heartbeats cleared",
+    }
 
 
 def test_action_redeploy_compose_endpoint(
@@ -1091,10 +1091,41 @@ def test_compose_drift_is_unknown_without_github_token(
     }
 
 
+def test_compose_drift_reads_portainer_current_deployment_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_get(url: str, *a: Any, **kwargs: Any) -> _FakeResponse:
+        captured["url"] = url
+        return _FakeResponse(200, {"status": "ahead", "files": [{"filename": "azure/app.yml"}]})
+
+    monkeypatch.setattr(portainer_stacks.settings, "github_api_token", "gh-token")
+    monkeypatch.setattr(
+        portainer_stacks.settings,
+        "docker_compose",
+        "https://github.com/mayberryjp/dockercompose/azure",
+    )
+    monkeypatch.setattr(portainer_stacks.requests, "get", fake_get)
+    stack = {
+        "GitConfig": {"URL": "https://github.com/mayberryjp/dockercompose.git"},
+        "CurrentDeploymentInfo": {
+            "ConfigHash": "deployed-from-current-info",
+            "ReferenceName": "refs/heads/main",
+            "ConfigFilePath": "azure/app.yml",
+        },
+    }
+
+    assert portainer_stacks._compose_drift(stack)["status"] == "changed"
+    assert "/compare/deployed-from-current-info...main" in captured["url"]
+
+
 def test_dashboard_shows_monitor_actions(client: TestApp) -> None:
     resp = client.get("/")
     assert resp.status_code == 200
-    assert 'id="delete-all-monitors"' in resp.text
+    assert 'id="clear-all-heartbeats"' in resp.text
+    assert "clear all monitor heartbeats" in resp.text
+    assert "Monitor definitions will remain" in resp.text
     assert 'data-url="/actions/add-docker-monitor"' in resp.text
     assert 'url: "/actions/redeploy-compose"' in resp.text
     assert 'var REFRESH_MS = 300000;' in resp.text

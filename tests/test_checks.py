@@ -158,6 +158,34 @@ def test_uptime_kuma_counts_up_and_down(monkeypatch: pytest.MonkeyPatch) -> None
     }
 
 
+def test_uptime_kuma_accepts_full_status_page_url_as_slug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested: list[str] = []
+
+    def fake_get(url: str, *a: Any, **k: Any) -> _FakeResponse:
+        requested.append(url)
+        return _FakeResponse(200, {"heartbeatList": {"3": [{"status": 1}]}})
+
+    monkeypatch.setattr(uptime_kuma.settings, "uptime_kuma_base_url", "http://uptimekuma.azure.farm:3001/")
+    monkeypatch.setattr(
+        uptime_kuma.settings,
+        "uptime_kuma_slug",
+        "http://uptimekuma.azure.farm:3001/status/allstatus",
+    )
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    assert uptime_kuma.collect() == {
+        "up": 1,
+        "down": 0,
+        "total": 1,
+        "down_monitors": [],
+    }
+    assert requested == [
+        "http://uptimekuma.azure.farm:3001/api/status-page/heartbeat/allstatus"
+    ]
+
+
 def test_summary_handles_non_json_uptime_kuma_response(
     client: TestApp, monkeypatch: pytest.MonkeyPatch
 ) -> None:

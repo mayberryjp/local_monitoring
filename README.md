@@ -89,7 +89,7 @@ All configuration is via environment variables, set in `docker-compose.yml`.
 | `HTTP_TIMEOUT_SECONDS` | `10` | Timeout for each downstream call. |
 | `TZ` | `America/New_York` | Container time zone (authoritative for timestamps). |
 | `UPTIME_KUMA_BASE_URL` | — | Base URL of Uptime Kuma, e.g. `http://uptime-kuma:3001`. |
-| `UPTIME_KUMA_SLUG` | — | Status-page slug. |
+| `UPTIME_KUMA_SLUG` | — | Status-page slug or full status-page URL (the final `/status/<slug>` segment is used). |
 | `WEBDAV_URL` | — | Full URL of the file to check. |
 | `WEBDAV_USERNAME` | — | Optional basic-auth user. |
 | `WEBDAV_PASSWORD` | — | Optional basic-auth password. |

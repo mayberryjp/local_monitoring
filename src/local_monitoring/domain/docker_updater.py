@@ -77,6 +77,23 @@ def update_one(name: str) -> dict[str, Any]:
     return {"triggered": target}
 
 
+def force_check() -> dict[str, Any]:
+    """Ask docker-updater to start its update check now (same as its UI's check button)."""
+    if not settings.docker_updater_base_url:
+        raise CheckError("not_configured", "docker-updater is not configured")
+
+    url = f"{settings.docker_updater_base_url.rstrip('/')}/api/check"
+    try:
+        resp = requests.post(url, timeout=settings.http_timeout_seconds)
+    except requests.RequestException as exc:
+        raise CheckError(
+            "upstream_unreachable", "docker-updater check request failed", str(exc)
+        ) from exc
+    if resp.status_code != 200:
+        raise CheckError("upstream_error", f"docker-updater check returned HTTP {resp.status_code}")
+    return {"message": "docker-updater container check started"}
+
+
 def update_all() -> dict[str, Any]:
     """Trigger a docker-updater update for every container with a pending update.
 

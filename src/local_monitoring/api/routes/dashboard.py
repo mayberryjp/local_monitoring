@@ -105,6 +105,7 @@ _DASHBOARD_HTML = """<!doctype html>
       </div>
       <div class="header-actions">
         <button id="clear-all-heartbeats" class="danger" type="button">clear all monitor heartbeats</button>
+        <button id="check-updates" type="button">check for container updates</button>
         <button id="refresh" type="button">refresh</button>
       </div>
     </header>
@@ -172,6 +173,7 @@ _DASHBOARD_HTML = """<!doctype html>
 
     var refreshBtn = document.getElementById("refresh");
     var clearHeartbeatsBtn = document.getElementById("clear-all-heartbeats");
+    var checkUpdatesBtn = document.getElementById("check-updates");
     var statusEl = document.getElementById("status");
     var statusText = document.getElementById("status-text");
     var board = document.getElementById("board");
@@ -351,6 +353,24 @@ _DASHBOARD_HTML = """<!doctype html>
       });
     }
 
+    function checkForUpdates() {
+      checkUpdatesBtn.disabled = true;
+      checkUpdatesBtn.textContent = "starting check...";
+      fetch("/actions/check-updates", { method: "POST", cache: "no-store" }).then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+      }).then(function (res) {
+        if (!res.ok || !res.data || res.data.status === "error") {
+          throw new Error(res.data && res.data.error ? res.data.error : "update check failed");
+        }
+        footer.textContent = (res.data.message || "docker-updater container check started") + " \u00b7 click refresh in a minute for results";
+      }).catch(function (e) {
+        footer.textContent = "update check failed: " + e.message;
+      }).then(function () {
+        checkUpdatesBtn.disabled = false;
+        checkUpdatesBtn.textContent = "check for container updates";
+      });
+    }
+
     function refresh(forceCompose) {
       if (refreshBtn.disabled) return;
       refreshBtn.disabled = true;
@@ -380,6 +400,7 @@ _DASHBOARD_HTML = """<!doctype html>
 
     refreshBtn.addEventListener("click", function () { refresh(true); });
     clearHeartbeatsBtn.addEventListener("click", clearAllHeartbeats);
+    checkUpdatesBtn.addEventListener("click", checkForUpdates);
     refresh();
     setInterval(refresh, REFRESH_MS);
   </script>

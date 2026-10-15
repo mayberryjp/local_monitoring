@@ -54,6 +54,10 @@ def register_action_routes(app: Bottle) -> None:
     def update_all() -> dict[str, Any]:
         return _run(docker_updater.update_all)
 
+    @app.post("/actions/check-updates")
+    def check_updates() -> dict[str, Any]:
+        return _run(docker_updater.force_check)
+
     @app.post("/actions/update")
     def update_one() -> dict[str, Any]:
         name = _target("name")

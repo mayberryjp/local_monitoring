@@ -165,7 +165,10 @@ _DASHBOARD_HTML = """<!doctype html>
       { type: "Update", key: "docker_updater", list: "pending_containers", link: "updater",
         note: "update available",
         action: { url: "/actions/update", label: "update", field: "name" },
-        map: function (i) { return { issue: i.image || i.name, target: i.name }; } },
+        map: function (i) {
+          return { issue: i.image || i.name, target: i.name,
+            note: "update available \u00b7 " + formatDownloadSize(i.download_size) };
+        } },
       { type: "Image", key: "docker_images", list: "unused_images", link: "portainer",
         note: "unused",
         action: { url: "/actions/delete-image", label: "delete image", field: "image", danger: true } }
@@ -189,6 +192,19 @@ _DASHBOARD_HTML = """<!doctype html>
       });
     }
 
+    function formatDownloadSize(bytes) {
+      if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) {
+        return "download size unknown";
+      }
+      var units = ["B", "KiB", "MiB", "GiB", "TiB"];
+      var unit = 0;
+      while (bytes >= 1024 && unit < units.length - 1) {
+        bytes /= 1024;
+        unit++;
+      }
+      return (unit === 0 ? String(bytes) : bytes.toFixed(1)) + " " + units[unit] + " download";
+    }
+
     function openLink(card) {
       var url = LINKS[card.link];
       if (!url) return "";
@@ -198,7 +214,8 @@ _DASHBOARD_HTML = """<!doctype html>
 
     function rowHtml(card, item, mapped) {
       var issue = escapeHtml(mapped.issue);
-      if (card.note) issue += ' <span class="sub">\u00b7 ' + escapeHtml(card.note) + "</span>";
+      var note = mapped.note || card.note;
+      if (note) issue += ' <span class="sub">\u00b7 ' + escapeHtml(note) + "</span>";
       var act = "";
       var actions = mapped.actions || card.actions || (card.action ? [card.action] : []);
       if (card.dockerHost) {

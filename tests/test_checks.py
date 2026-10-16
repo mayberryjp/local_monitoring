@@ -327,10 +327,36 @@ def test_docker_updater_counts_pending(monkeypatch: pytest.MonkeyPatch) -> None:
         "pending_updates": 2,
         "pending_images": ["nginx:latest", "ghcr.io/owner/app:main"],
         "pending_containers": [
-            {"name": None, "image": "nginx:latest"},
-            {"name": None, "image": "ghcr.io/owner/app:main"},
+            {"name": None, "image": "nginx:latest", "download_size": None},
+            {"name": None, "image": "ghcr.io/owner/app:main", "download_size": None},
         ],
     }
+
+
+@pytest.mark.parametrize("download_size", [None, 0, 23589887, 2157465822])
+def test_docker_updater_preserves_download_size(
+    client: TestApp, monkeypatch: pytest.MonkeyPatch, download_size: int | None
+) -> None:
+    container = {
+        "name": "web",
+        "image": "nginx:latest",
+        "status": "update",
+        "download_size": download_size,
+        "remote_size": 3000000000,
+        "image_size": 6000000000,
+    }
+    monkeypatch.setattr(docker_updater.settings, "docker_updater_base_url", "http://du")
+    monkeypatch.setattr(
+        requests, "get", lambda *a, **k: _FakeResponse(200, {"containers": [container]})
+    )
+
+    resp = client.get("/docker-updater")
+
+    assert resp.json["pending_containers"] == [
+        {"name": "web", "image": "nginx:latest", "download_size": download_size}
+    ]
+    assert resp.json["pending_updates"] == 1
+    assert resp.json["pending_images"] == ["nginx:latest"]
 
 
 def test_docker_monitors_flags_uncovered_containers(monkeypatch: pytest.MonkeyPatch) -> None:

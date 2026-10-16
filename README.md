@@ -14,7 +14,7 @@ when the aggregate endpoint is called.
 | --- | --- | --- |
 | `uptime_kuma` | An Uptime Kuma status-page slug | `{"up": N, "down": M, "total": T, "down_monitors": [name, ...]}` |
 | `webdav` | A single file's WebDAV last-modified time | `{"result": "OK"\|"STALE", "recent": bool, "timestamp": ..., "age_hours": ..., "threshold_hours": ...}` |
-| `docker_updater` | [docker-updater](https://github.com/liquidguru/docker-updater) `/api/status` | `{"pending_updates": N, "pending_images": [image, ...]}` |
+| `docker_updater` | [docker-updater](https://github.com/liquidguru/docker-updater) `/api/status` | `{"pending_updates": N, "pending_images": [image, ...], "pending_containers": [{"name": ..., "image": ..., "download_size": bytes_or_null}, ...]}` |
 | `docker_containers` | The Docker socket | `{"running": N, "stopped": M, "total": T, "stopped_containers": [name, ...]}` |
 | `docker_monitors` | A per-site container list vs. [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api) `docker` monitors | `{"monitored": N, "unmonitored": M, "total": T, "unmonitored_containers": [name, ...]}` |
 | `ping_monitors` | A per-site device list vs. [uptime-kuma-v2-api](https://github.com/paul-hph/uptime-kuma-v2-api) `ping` monitors | `{"monitored": N, "unmonitored": M, "total": T, "unmonitored_devices": [name, ...]}` |
@@ -33,7 +33,7 @@ when the aggregate endpoint is called.
 | `GET` | `/uptime-kuma` | Uptime Kuma up/down counter. |
 | `GET` | `/status-page-monitors` | Uptime Kuma monitors not included in the configured public status page. |
 | `GET` | `/webdav` | WebDAV file freshness. |
-| `GET` | `/docker-updater` | docker-updater pending-update count. |
+| `GET` | `/docker-updater` | docker-updater pending updates and per-container download sizes in bytes (or `null` when unknown). |
 | `GET` | `/docker` | Running/stopped container count. |
 | `GET` | `/docker-monitors` | Containers missing an Uptime Kuma v2 docker monitor. |
 | `GET` | `/docker-hosts` | Configured Uptime Kuma v2 Docker hosts, for selecting the host used by a new monitor. |
@@ -68,7 +68,7 @@ Example `/summary`:
     "uptime_kuma": {"status": "ok", "up": 12, "down": 1, "total": 13, "down_monitors": ["Database"]},
     "status_page_monitors": {"status": "ok", "status_page": "my-status-page", "listed": false, "missing": 1, "unlisted_monitors": [{"id": 7, "name": "New service", "type": "http"}]},
     "webdav": {"status": "ok", "result": "OK", "recent": true, "timestamp": "2026-09-14T08:12:00-04:00", "age_hours": 1.2, "threshold_hours": 24.0},
-    "docker_updater": {"status": "ok", "pending_updates": 3, "pending_images": ["nginx:latest", "ghcr.io/owner/app:main", "redis:7"], "pending_containers": [{"name": "web", "image": "nginx:latest"}]},
+    "docker_updater": {"status": "ok", "pending_updates": 3, "pending_images": ["nginx:latest", "ghcr.io/owner/app:main", "redis:7"], "pending_containers": [{"name": "web", "image": "nginx:latest", "download_size": 23589887}]},
     "docker_containers": {"status": "ok", "running": 21, "stopped": 2, "total": 23, "stopped_containers": ["backup-runner", "old-db"]},
     "docker_monitors": {"status": "ok", "monitored": 6, "unmonitored": 1, "total": 7, "unmonitored_containers": ["homeassistant"]},
     "ping_monitors": {"status": "ok", "monitored": 4, "unmonitored": 1, "total": 5, "unmonitored_devices": ["printer"]},
@@ -123,6 +123,11 @@ trigger one docker-updater update, delete one unused image, or delete an unexpec
 Uptime Kuma monitor. A confirmed header action clears all monitor heartbeat history and
 aggregate uptime statistics without deleting monitor definitions. These are
 unauthenticated `POST` actions, so only expose this service on a trusted network.
+
+Update rows show Docker Updater's `download_size` in human-readable binary units
+(KiB, MiB, GiB), accounting for image layers already present, rather than the full
+image size. Missing sizes are shown as **download size unknown**; a known zero-byte
+download is shown as **0 B download**.
 
 Compose rows are matched to Portainer Git stacks using live Compose file labels, the
 configured repository, and source directory. `/summary` reports GitHub-managed,

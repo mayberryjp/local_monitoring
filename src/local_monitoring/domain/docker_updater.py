@@ -1,4 +1,4 @@
-"""Reduce docker-updater's status to a pending-updates count."""
+"""Reduce docker-updater's status to pending updates and their download sizes."""
 
 from __future__ import annotations
 
@@ -28,7 +28,12 @@ def collect() -> dict[str, Any]:
         "pending_updates": len(pending),
         "pending_images": [c.get("image") for c in pending],
         "pending_containers": [
-            {"name": c.get("name"), "image": c.get("image")} for c in pending
+            {
+                "name": c.get("name"),
+                "image": c.get("image"),
+                "download_size": c.get("download_size"),
+            }
+            for c in pending
         ],
     }
 

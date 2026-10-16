@@ -64,6 +64,12 @@ when the aggregate endpoint is called.
 key. Individual check endpoints return `503` with a JSON error envelope when their
 downstream is unreachable or unconfigured.
 
+All three tabs share the same app header and toolbar. **Clear all monitor
+heartbeats** and **check for container updates** are available on every tab;
+**refresh** reloads the current tab's data. Global action results and errors appear
+below the navigation, and clearing heartbeats requires confirmation.
+The header also displays the application version in small text beside the app name.
+
 Use the **Containers** navigation link to manage containers without adding the full
 inventory to the monitoring page. Restart and redeploy require confirmation.
 Redeploy is available only for containers mapped to an unambiguous Portainer Git
@@ -163,10 +169,13 @@ Uptime Kuma monitor. A confirmed header action clears all monitor heartbeat hist
 aggregate uptime statistics without deleting monitor definitions. These are
 unauthenticated `POST` actions, so only expose this service on a trusted network.
 
-Update rows show Docker Updater's `download_size` in human-readable binary units
+Update rows show Docker Updater's `download_size` in a compact chip with human-readable binary units
 (KiB, MiB, GiB), accounting for image layers already present, rather than the full
 image size. Missing sizes are shown as **download size unknown**; a known zero-byte
 download is shown as **0 B download**.
+Chips are green for known sizes up to and including **50 MiB (52,428,800 bytes)**,
+red for larger downloads, and neutral when the size is unknown. Colors use the
+unrounded byte count, not the rounded display text.
 
 Compose rows are matched to Portainer Git stacks using live Compose file labels, the
 configured repository, and source directory. `/summary` reports GitHub-managed,
@@ -184,6 +193,12 @@ This service is stateless: it stores nothing and has no database, so there are n
 migrations.
 
 ## Local runbook
+
+Increment the patch version once per completed batch of project file changes,
+keeping `project.version` in `pyproject.toml` and `__version__` in
+`src/local_monitoring/__init__.py` synchronized. The shared header uses this runtime
+version. The persistent rule is saved in
+[project instructions](.github/copilot-instructions.md).
 
 ```bash
 # install (dev deps)

@@ -6,6 +6,7 @@ import json
 
 from bottle import Bottle, response
 
+from local_monitoring.api.page_layout import render_page
 from local_monitoring.config import settings
 
 _DASHBOARD_HTML = """<!doctype html>
@@ -28,18 +29,6 @@ _DASHBOARD_HTML = """<!doctype html>
     margin: 0; color: var(--fg);
     font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
-  .wrap { max-width: 920px; margin: 0 auto; padding: 2.2rem 1.25rem 4rem; }
-  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem;
-           flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: .9rem;
-           margin-bottom: 1.4rem; }
-  .title { font-size: 1.25rem; font-weight: 700; letter-spacing: .2px; }
-  .title::before { content: "\u258d"; color: var(--accent); margin-right: .4rem; }
-  .header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-  .page-nav { display: flex; gap: 1rem; margin-bottom: 1.2rem; }
-  .page-nav a { color: var(--accent); text-decoration: none; }
-  .page-nav a[aria-current] { color: var(--fg); border-bottom: 2px solid var(--accent); }
-  .tag { color: var(--muted); font-size: .72rem; margin-top: .25rem; text-transform: uppercase;
-         letter-spacing: .16em; }
   button { font: inherit; font-size: .8rem; color: var(--fg); background: var(--panel2);
            border: 1px solid var(--border); border-radius: 6px; padding: .4rem .9rem;
            cursor: pointer; transition: border-color .15s, color .15s; }
@@ -69,6 +58,13 @@ _DASHBOARD_HTML = """<!doctype html>
   .type { white-space: nowrap; font-weight: 600; color: var(--accent); }
   .issue { word-break: break-all; }
   .issue .sub { color: var(--muted); }
+  .size-chip { display: inline-flex; align-items: center; vertical-align: middle;
+               margin-left: .55rem; padding: .12rem .55rem; border-radius: 999px;
+               border: 1px solid #365072; background: #142238; color: #b9d7ff;
+               font-size: .72rem; font-weight: 600; line-height: 1.6;
+               font-variant-numeric: tabular-nums; white-space: nowrap; word-break: normal; }
+  .size-chip.small { border-color: #216b50; background: #102e24; color: var(--ok); }
+  .size-chip.large { border-color: #8c4141; background: #351b1b; color: var(--bad); }
   .act { white-space: nowrap; text-align: right; }
   .act .btn { font-size: .72rem; padding: .25rem .65rem; margin-left: .55rem; }
   .act .btn.danger:hover { border-color: var(--bad); color: var(--bad); }
@@ -83,8 +79,6 @@ _DASHBOARD_HTML = """<!doctype html>
 
   /* Phones: the 3-column table can't fit, so stack each row into a card. */
   @media (max-width: 640px) {
-    .wrap { padding: 1.4rem 1rem 3rem; }
-    header { margin-bottom: 1.1rem; }
     thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     table { border: none; background: transparent; border-radius: 0; overflow: visible; }
     tbody tr, tbody tr:hover { display: block; background: var(--panel); border: 1px solid var(--border);
@@ -97,27 +91,12 @@ _DASHBOARD_HTML = """<!doctype html>
     .act .btn { margin-left: 0; }
     .act a.open { margin-left: auto; }
   }
+  __PAGE_STYLES__
 </style>
 </head>
 <body>
   <div class="wrap">
-    <header>
-      <div>
-        <div class="title">local-monitoring</div>
-        <div class="tag">actions dashboard</div>
-      </div>
-      <div class="header-actions">
-        <button id="clear-all-heartbeats" class="danger" type="button">clear all monitor heartbeats</button>
-        <button id="check-updates" type="button">check for container updates</button>
-        <button id="refresh" type="button">refresh</button>
-      </div>
-    </header>
-
-    <nav class="page-nav" aria-label="Main navigation">
-      <a href="/" aria-current="page">Monitoring</a>
-      <a href="/containers">Containers</a>
-      <a href="/downloads">Downloads</a>
-    </nav>
+    __PAGE_HEADER__
 
     <div id="status" class="status"><span class="dot"></span><span id="status-text">loading\u2026</span></div>
 
@@ -175,8 +154,7 @@ _DASHBOARD_HTML = """<!doctype html>
         note: "update available",
         action: { url: "/actions/update", label: "update", field: "name" },
         map: function (i) {
-          return { issue: i.image || i.name, target: i.name,
-            note: "update available \u00b7 " + formatDownloadSize(i.download_size) };
+          return { issue: i.image || i.name, target: i.name, downloadSize: i.download_size };
         } },
       { type: "Image", key: "docker_images", list: "unused_images", link: "portainer",
         note: "unused",
@@ -184,8 +162,6 @@ _DASHBOARD_HTML = """<!doctype html>
     ];
 
     var refreshBtn = document.getElementById("refresh");
-    var clearHeartbeatsBtn = document.getElementById("clear-all-heartbeats");
-    var checkUpdatesBtn = document.getElementById("check-updates");
     var statusEl = document.getElementById("status");
     var statusText = document.getElementById("status-text");
     var board = document.getElementById("board");
@@ -201,8 +177,12 @@ _DASHBOARD_HTML = """<!doctype html>
       });
     }
 
+    function isDownloadSizeKnown(bytes) {
+      return typeof bytes === "number" && Number.isFinite(bytes) && bytes >= 0;
+    }
+
     function formatDownloadSize(bytes) {
-      if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) {
+      if (!isDownloadSizeKnown(bytes)) {
         return "download size unknown";
       }
       var units = ["B", "KiB", "MiB", "GiB", "TiB"];
@@ -225,6 +205,15 @@ _DASHBOARD_HTML = """<!doctype html>
       var issue = escapeHtml(mapped.issue);
       var note = mapped.note || card.note;
       if (note) issue += ' <span class="sub">\u00b7 ' + escapeHtml(note) + "</span>";
+      if (Object.prototype.hasOwnProperty.call(mapped, "downloadSize")) {
+        var sizeClass = "size-chip";
+        if (isDownloadSizeKnown(mapped.downloadSize)) {
+          sizeClass += mapped.downloadSize > 50 * 1024 * 1024 ? " large" : " small";
+        }
+        issue += ' <span class="' + sizeClass +
+          '" title="Image download size (green: up to 50 MiB; red: over 50 MiB)">' +
+          escapeHtml(formatDownloadSize(mapped.downloadSize)) + "</span>";
+      }
       var act = "";
       var actions = mapped.actions || card.actions || (card.action ? [card.action] : []);
       if (card.dockerHost) {
@@ -359,44 +348,6 @@ _DASHBOARD_HTML = """<!doctype html>
       });
     }
 
-    function clearAllHeartbeats() {
-      if (!window.confirm("Clear heartbeat history and uptime statistics for all monitors? Monitor definitions will remain; active monitors may restart.")) return;
-      clearHeartbeatsBtn.disabled = true;
-      clearHeartbeatsBtn.textContent = "clearing...";
-      fetch("/actions/clear-heartbeats", { method: "POST", cache: "no-store" }).then(function (r) {
-        return r.json().then(function (d) { return { ok: r.ok, data: d }; });
-      }).then(function (res) {
-        if (!res.ok || !res.data || res.data.status === "error") {
-          throw new Error(res.data && res.data.error ? res.data.error : "heartbeat clear failed");
-        }
-        footer.textContent = res.data.message || "all monitor heartbeats and uptime statistics cleared";
-        refresh();
-      }).catch(function (e) {
-        footer.textContent = "heartbeat clear failed: " + e.message;
-      }).then(function () {
-        clearHeartbeatsBtn.disabled = false;
-        clearHeartbeatsBtn.textContent = "clear all monitor heartbeats";
-      });
-    }
-
-    function checkForUpdates() {
-      checkUpdatesBtn.disabled = true;
-      checkUpdatesBtn.textContent = "starting check...";
-      fetch("/actions/check-updates", { method: "POST", cache: "no-store" }).then(function (r) {
-        return r.json().then(function (d) { return { ok: r.ok, data: d }; });
-      }).then(function (res) {
-        if (!res.ok || !res.data || res.data.status === "error") {
-          throw new Error(res.data && res.data.error ? res.data.error : "update check failed");
-        }
-        footer.textContent = (res.data.message || "docker-updater container check started") + " \u00b7 click refresh in a minute for results";
-      }).catch(function (e) {
-        footer.textContent = "update check failed: " + e.message;
-      }).then(function () {
-        checkUpdatesBtn.disabled = false;
-        checkUpdatesBtn.textContent = "check for container updates";
-      });
-    }
-
     function refresh(forceCompose) {
       if (refreshBtn.disabled) return;
       refreshBtn.disabled = true;
@@ -425,11 +376,10 @@ _DASHBOARD_HTML = """<!doctype html>
     }
 
     refreshBtn.addEventListener("click", function () { refresh(true); });
-    clearHeartbeatsBtn.addEventListener("click", clearAllHeartbeats);
-    checkUpdatesBtn.addEventListener("click", checkForUpdates);
     refresh();
     setInterval(refresh, REFRESH_MS);
   </script>
+  __HEADER_SCRIPT__
 </body>
 </html>
 """
@@ -448,7 +398,7 @@ def _render_dashboard() -> str:
     # json.dumps yields a valid JS object literal; neutralise any "</" so a URL
     # cannot break out of the <script> element.
     links = json.dumps(_section_links()).replace("</", "<\\/")
-    return _DASHBOARD_HTML.replace("__LINKS_JSON__", links)
+    return render_page(_DASHBOARD_HTML, "/").replace("__LINKS_JSON__", links)
 
 
 def register_dashboard_routes(app: Bottle) -> None:

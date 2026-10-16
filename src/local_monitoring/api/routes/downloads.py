@@ -6,6 +6,7 @@ from typing import Any
 
 from bottle import Bottle, response
 
+from local_monitoring.api.page_layout import render_page
 from local_monitoring.domain import image_downloads
 from local_monitoring.domain.errors import CheckError
 
@@ -23,28 +24,20 @@ _DOWNLOADS_HTML = """<!doctype html>
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg);
          font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
-  .wrap { max-width: 1000px; margin: auto; padding: 2.2rem 1.25rem 4rem; }
   h1 { font-size: 1.25rem; }
-  header { border-bottom: 1px solid var(--border); margin-bottom: 1.4rem; }
-  nav { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.2rem; }
-  nav a { color: var(--accent); text-decoration: none; }
-  nav a[aria-current] { color: var(--fg); border-bottom: 2px solid var(--accent); }
   .muted { color: var(--muted); }
   .error { color: var(--bad); white-space: pre-wrap; }
   article { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
             margin: 1rem 0; padding: 1rem; overflow-wrap: anywhere; }
   h2 { margin: 0; font-size: 1rem; }
   progress { width: 100%; height: 1rem; accent-color: var(--accent); }
-  @media (max-width: 640px) { .wrap { padding: 1.4rem 1rem 3rem; } }
+  __PAGE_STYLES__
 </style>
 </head>
 <body>
 <main class="wrap">
-  <header><h1>Image downloads</h1></header>
-  <nav aria-label="Main navigation">
-    <a href="/">Monitoring</a><a href="/containers">Containers</a>
-    <a href="/downloads" aria-current="page">Downloads</a>
-  </nav>
+  __PAGE_HEADER__
+  <h1>Image downloads</h1>
   <p class="muted">Live image pulls from docker-updater, including updates started from
     Monitoring. Start container updates on the <a href="/">Monitoring page</a> or in
     docker-updater. This page only observes progress; it does not start another pull.</p>
@@ -60,6 +53,7 @@ _DOWNLOADS_HTML = """<!doctype html>
   var list = document.getElementById("downloads");
   var statusText = document.getElementById("status");
   var pollError = document.getElementById("poll-error");
+  var refreshButton = document.getElementById("refresh");
   var polling = false;
   var loaded = false;
 
@@ -118,6 +112,8 @@ _DOWNLOADS_HTML = """<!doctype html>
   function refresh() {
     if (polling) return;
     polling = true;
+    refreshButton.disabled = true;
+    refreshButton.textContent = "refreshing...";
     requestJson("/image-downloads", { cache: "no-store" }).then(function (data) {
       render(data.pulls);
       loaded = true;
@@ -126,12 +122,18 @@ _DOWNLOADS_HTML = """<!doctype html>
       if (!loaded) statusText.textContent = "Download status unavailable.";
       pollError.textContent = "Progress unavailable; displayed data may be stale: " + error.message;
       pollError.hidden = false;
-    }).then(function () { polling = false; });
+    }).then(function () {
+      polling = false;
+      refreshButton.disabled = false;
+      refreshButton.textContent = "refresh";
+    });
   }
 
+  refreshButton.addEventListener("click", refresh);
   refresh();
   setInterval(refresh, 2000);
 </script>
+__HEADER_SCRIPT__
 </body>
 </html>
 """
@@ -141,7 +143,7 @@ def register_download_routes(app: Bottle) -> None:
     @app.get("/downloads")
     def downloads_page() -> str:
         response.content_type = "text/html; charset=utf-8"
-        return _DOWNLOADS_HTML
+        return render_page(_DOWNLOADS_HTML, "/downloads")
 
     @app.get("/image-downloads")
     def downloads() -> dict[str, Any]:

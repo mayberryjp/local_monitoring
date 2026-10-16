@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from bottle import Bottle, response
 
+from local_monitoring.api.page_layout import render_page
+
 _CONTAINERS_HTML = """<!doctype html>
 <html lang="en">
 <head>
@@ -18,13 +20,7 @@ _CONTAINERS_HTML = """<!doctype html>
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg);
          font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
-  .wrap { max-width: 1100px; margin: auto; padding: 2.2rem 1.25rem 4rem; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-           border-bottom: 1px solid var(--border); margin-bottom: 1.4rem; }
   h1 { font-size: 1.25rem; }
-  nav { display: flex; gap: 1rem; margin-bottom: 1.2rem; }
-  nav a { color: var(--accent); text-decoration: none; }
-  nav a[aria-current] { color: var(--fg); border-bottom: 2px solid var(--accent); }
   button { font: inherit; font-size: .8rem; color: var(--fg); background: #17171c;
            border: 1px solid var(--border); border-radius: 6px; padding: .4rem .7rem;
            cursor: pointer; }
@@ -40,16 +36,13 @@ _CONTAINERS_HTML = """<!doctype html>
   .muted { color: var(--muted); }
   .error { color: var(--bad); }
   #message, #warning { white-space: pre-wrap; }
-  @media (max-width: 640px) { .wrap { padding: 1.4rem 1rem 3rem; } }
+  __PAGE_STYLES__
 </style>
 </head>
 <body>
 <main class="wrap">
-  <header><h1>Container management</h1><button id="refresh" type="button">refresh</button></header>
-  <nav aria-label="Main navigation">
-    <a href="/">Monitoring</a><a href="/containers" aria-current="page">Containers</a>
-    <a href="/downloads">Downloads</a>
-  </nav>
+  __PAGE_HEADER__
+  <h1>Container management</h1>
   <p class="muted">Restart keeps the existing container configuration.
     Redeploy pulls the configured Git Compose source and redeploys the entire Portainer stack,
     not just this container. It does not force image pulling.</p>
@@ -194,6 +187,7 @@ _CONTAINERS_HTML = """<!doctype html>
   refreshButton.addEventListener("click", refresh);
   refresh();
 </script>
+__HEADER_SCRIPT__
 </body>
 </html>
 """
@@ -203,4 +197,4 @@ def register_container_routes(app: Bottle) -> None:
     @app.get("/containers")
     def containers() -> str:
         response.content_type = "text/html; charset=utf-8"
-        return _CONTAINERS_HTML
+        return render_page(_CONTAINERS_HTML, "/containers")

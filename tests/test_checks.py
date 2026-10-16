@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -10,6 +12,7 @@ import pytest
 import requests
 from webtest import TestApp
 
+from local_monitoring import __version__
 from local_monitoring.domain import (
     additional_monitors,
     allowlist,
@@ -46,6 +49,49 @@ def test_pages_share_dashboard_favicon(client: TestApp) -> None:
     assert icons[0][0].startswith("data:image/svg+xml,")
     assert icons[1] == icons[0]
     assert icons[2] == icons[0]
+
+
+@pytest.mark.parametrize("path", ["/", "/containers", "/downloads"])
+def test_page_navigation_marks_only_current_page(client: TestApp, path: str) -> None:
+    page = client.get(path).text
+    nav = re.search(r'<nav class="page-nav" aria-label="Main navigation">(.*?)</nav>', page, re.DOTALL)
+    assert nav is not None
+    assert re.findall(r'href="([^"]+)"', nav[1]) == ["/", "/containers", "/downloads"]
+    assert re.findall(r'<a href="([^"]+)" aria-current="page">', nav[1]) == [path]
+
+
+def test_pages_share_header_toolbar_and_layout(client: TestApp) -> None:
+    pages = [client.get(path).text for path in ("/", "/containers", "/downloads")]
+    headers = [re.search(r'<header class="app-header">.*?</header>', page, re.DOTALL) for page in pages]
+    assert all(header is not None for header in headers)
+    assert len({header[0] for header in headers if header is not None}) == 1
+    for page in pages:
+        for button in ("clear-all-heartbeats", "check-updates", "refresh"):
+            assert page.count(f'id="{button}"') == 1
+        assert 'id="header-message" role="status"' in page
+        assert 'id="header-error" role="alert"' in page
+        assert '"/actions/clear-heartbeats"' in page
+        assert '"/actions/check-updates"' in page
+        assert "Monitor definitions will remain" in page
+        assert ".wrap { max-width: 1100px;" in page
+        assert "__PAGE_" not in page
+        assert "__HEADER_SCRIPT__" not in page
+
+
+@pytest.mark.parametrize("path", ["/", "/containers", "/downloads"])
+def test_pages_display_application_version(client: TestApp, path: str) -> None:
+    page = client.get(path).text
+    assert (
+        f'<small class="app-version" aria-label="Application version">v{__version__}</small>'
+        in page
+    )
+    assert "__APP_VERSION__" not in page
+
+
+def test_package_and_runtime_versions_match() -> None:
+    project = Path(__file__).resolve().parents[1].joinpath("pyproject.toml")
+    with project.open("rb") as manifest:
+        assert tomllib.load(manifest)["project"]["version"] == __version__
 
 
 def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -29,9 +29,8 @@ when the aggregate endpoint is called.
 | `GET` | `/` | HTML status page rendering the down monitors, stopped containers, pending updates, unmonitored containers, and unused images. |
 | `GET` | `/containers` | Separate container management page with the full container list, restart buttons, and supported Portainer Git stack redeploy buttons. |
 | `GET` | `/container-inventory` | Live Docker inventory (`containers` with `name`, `state`, and `image`), independent of monitoring and Portainer. |
-| `GET` | `/downloads` | Separate image-download page with a pull form and auto-refreshing layer progress. |
-| `GET` | `/image-downloads` | Tracked pulls with state, error, reported download bytes, and per-layer download/extraction counters. |
-| `POST` | `/actions/pull-image` | Start an asynchronous Docker image pull (JSON body `{"image": "nginx:latest"}`). Returns `202`, or `200` if that reference is already being pulled here. Does not recreate or restart containers. |
+| `GET` | `/downloads` | Read-only image-download page showing docker-updater's active pulls, refreshed every two seconds. |
+| `GET` | `/image-downloads` | Proxies docker-updater's `/api/pulls` as `{"status": "ok", "pulls": [...]}` with image, container, host, start time, byte counters, and percentage. |
 | `GET` | `/health` | Process liveness. |
 | `GET` | `/ready` | Readiness (always ok — downstreams are checked per request). |
 | `GET` | `/summary` | All eleven checks in one object, run in parallel. Add `?refresh=true` to bypass the Compose inventory cache. |
@@ -77,29 +76,27 @@ and Portainer configuration; expose the app only to trusted users.
 
 ### Image downloads
 
-The **Downloads** navigation link opens a separate page that polls every two
-seconds. Enter an image reference (tag or digest) to start a pull directly through
-the configured Docker socket. Untagged references use `latest`. Docker's configured
-registry credentials are used when available; missing credentials and pull errors
-are shown explicitly. This feature does not use docker-updater.
+The **Downloads** navigation link opens a read-only page that polls docker-updater
+every two seconds through this app's `/image-downloads` endpoint. Configure
+`DOCKER_UPDATER_BASE_URL` and deploy a docker-updater version supporting
+`GET /api/pulls`. Updates started from **Monitoring** or docker-updater appear
+automatically while their image pull is active, including remote-host pulls.
+No second pull is started, and this page does not need Docker socket access.
+The previous direct-pull form and `/actions/pull-image` endpoint have been removed.
 
-Each pull shows bytes downloaded versus the compressed layer totals reported by
-Docker, with expandable per-layer details. Totals can grow as Docker discovers
-layers; they are **not a guaranteed whole-image total**. Cached layers are marked
-as already present, not counted as transferred bytes. Extraction counters are
-shown separately from download bytes. Reaching the reported byte total does not
-mean extraction is finished; a pull is complete only after Docker confirms success.
+Each entry shows `image`, `container`, `host_id`, `started_at`, `progress_bytes`,
+`total_bytes`, and `percent_complete` from docker-updater. Unknown totals and
+percentages (`null`) show an indeterminate progress bar; zero-byte cached pulls
+can report 100%. Totals may change as Docker reports layers. Reaching 100% does
+not mean extraction or the container update has finished.
 
-Only pulls started through this app can be tracked, not existing pulls started by
-Compose, Portainer, or a terminal. Closing the page does not stop a pull. There is
-no cancel control. At most two pulls run concurrently; duplicate active references
-reuse the same job. The last 50 jobs are retained **in memory in this API process**
-and history resets on service restart. Use a single API process (as in the supplied
-deployment) so polling and starting pulls share the same tracker. Restarting the
-service loses tracking of in-flight pulls; their daemon-side outcome is unknown.
-Pulling an image can move its local tag but does not update running containers.
-These controls require Docker socket write access and should be limited to trusted
-users because downloads consume host bandwidth and disk space.
+The upstream API lists **active pulls only**: an entry disappears when its pull
+finishes, fails, or is cancelled. No history, per-layer details, or final update
+outcome is supplied; check docker-updater's update log for the result. Pulls
+started independently by Compose, Portainer, or a terminal are not tracked.
+Missing configuration, unsupported upstream versions, authentication failures,
+connection failures, and invalid responses are shown explicitly, rather than as
+an empty list. If polling fails, any displayed entries are marked as potentially stale.
 
 Example `/summary`:
 

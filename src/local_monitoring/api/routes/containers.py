@@ -11,6 +11,7 @@ _CONTAINERS_HTML = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>Local Monitoring - Containers</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101013'/%3E%3Cpath d='M3 17h5l3-8 4 14 3-9 2 3h6' fill='none' stroke='%236ea8fe' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root { --bg: #09090b; --panel: #101013; --border: #26262d; --fg: #ececf1;
           --muted: #8b8b95; --accent: #6ea8fe; --bad: #f87171; }

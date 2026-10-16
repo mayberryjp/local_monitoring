@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from typing import Any
 
@@ -34,6 +35,17 @@ class _FakeResponse:
 
     def json(self) -> Any:
         return self._payload
+
+
+def test_pages_share_dashboard_favicon(client: TestApp) -> None:
+    icons = [
+        re.findall(r'<link rel="icon" href="([^"]+)">', client.get(path).text)
+        for path in ("/", "/containers", "/downloads")
+    ]
+    assert len(icons[0]) == 1
+    assert icons[0][0].startswith("data:image/svg+xml,")
+    assert icons[1] == icons[0]
+    assert icons[2] == icons[0]
 
 
 def test_summary_runs_all_checks(client: TestApp, monkeypatch: pytest.MonkeyPatch) -> None:

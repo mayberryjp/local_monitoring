@@ -35,6 +35,9 @@ _DASHBOARD_HTML = """<!doctype html>
   .title { font-size: 1.25rem; font-weight: 700; letter-spacing: .2px; }
   .title::before { content: "\u258d"; color: var(--accent); margin-right: .4rem; }
   .header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+  .page-nav { display: flex; gap: 1rem; margin-bottom: 1.2rem; }
+  .page-nav a { color: var(--accent); text-decoration: none; }
+  .page-nav a[aria-current] { color: var(--fg); border-bottom: 2px solid var(--accent); }
   .tag { color: var(--muted); font-size: .72rem; margin-top: .25rem; text-transform: uppercase;
          letter-spacing: .16em; }
   button { font: inherit; font-size: .8rem; color: var(--fg); background: var(--panel2);
@@ -109,6 +112,12 @@ _DASHBOARD_HTML = """<!doctype html>
         <button id="refresh" type="button">refresh</button>
       </div>
     </header>
+
+    <nav class="page-nav" aria-label="Main navigation">
+      <a href="/" aria-current="page">Monitoring</a>
+      <a href="/containers">Containers</a>
+      <a href="/downloads">Downloads</a>
+    </nav>
 
     <div id="status" class="status"><span class="dot"></span><span id="status-text">loading\u2026</span></div>
 

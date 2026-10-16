@@ -41,6 +41,43 @@ def _open_client() -> Any:
         raise CheckError("docker_unreachable", "docker socket unavailable", str(exc)) from exc
 
 
+def inventory() -> dict[str, Any]:
+    """List every container without depending on the monitoring or Portainer APIs."""
+    client = _open_client()
+    try:
+        containers = client.containers.list(all=True)
+        rows = [
+            {
+                "name": container.name,
+                "state": container.status,
+                "image": container.attrs.get("Config", {}).get("Image", ""),
+            }
+            for container in containers
+        ]
+    except DockerException as exc:
+        raise CheckError("docker_unreachable", "docker socket request failed", str(exc)) from exc
+    finally:
+        client.close()
+    return {"containers": sorted(rows, key=lambda row: row["name"].casefold())}
+
+
+def restart_container(name: str) -> dict[str, Any]:
+    """Restart an exact, live container name, preserving its existing configuration."""
+    target = name.strip()
+    client = _open_client()
+    try:
+        containers = client.containers.list(all=True)
+        container = next((c for c in containers if c.name == target), None)
+        if container is None:
+            raise CheckError("not_found", f"container {target!r} was not found")
+        container.restart()
+    except DockerException as exc:
+        raise CheckError("docker_unreachable", "docker container restart failed", str(exc)) from exc
+    finally:
+        client.close()
+    return {"restarted": target}
+
+
 def _find_stopped(client: Any, name: str) -> Any:
     """The container object for a currently-stopped container of that name, else None."""
     try:

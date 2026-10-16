@@ -27,6 +27,11 @@ when the aggregate endpoint is called.
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/` | HTML status page rendering the down monitors, stopped containers, pending updates, unmonitored containers, and unused images. |
+| `GET` | `/containers` | Separate container management page with the full container list, restart buttons, and supported Portainer Git stack redeploy buttons. |
+| `GET` | `/container-inventory` | Live Docker inventory (`containers` with `name`, `state`, and `image`), independent of monitoring and Portainer. |
+| `GET` | `/downloads` | Separate image-download page with a pull form and auto-refreshing layer progress. |
+| `GET` | `/image-downloads` | Tracked pulls with state, error, reported download bytes, and per-layer download/extraction counters. |
+| `POST` | `/actions/pull-image` | Start an asynchronous Docker image pull (JSON body `{"image": "nginx:latest"}`). Returns `202`, or `200` if that reference is already being pulled here. Does not recreate or restart containers. |
 | `GET` | `/health` | Process liveness. |
 | `GET` | `/ready` | Readiness (always ok — downstreams are checked per request). |
 | `GET` | `/summary` | All eleven checks in one object, run in parallel. Add `?refresh=true` to bypass the Compose inventory cache. |
@@ -53,11 +58,48 @@ when the aggregate endpoint is called.
 | `POST` | `/actions/redeploy-compose` | Pull and redeploy the Portainer Git stack mapped to a container (JSON body `{"container": ...}`); does not force image pulling. |
 | `POST` | `/actions/delete-monitor` | Delete one additional Uptime Kuma v2 monitor (JSON body `{"name": ...}`). |
 | `POST` | `/actions/start-container` | Start one stopped container (JSON body `{"name": ...}`). |
+| `POST` | `/actions/restart-container` | Restart one existing container by exact name, keeping its current configuration (JSON body `{"name": ...}`). |
 | `POST` | `/actions/delete-container` | Delete one stopped container (JSON body `{"name": ...}`). |
 
 `/summary` always returns `200`; a failing check appears as an error object under its
 key. Individual check endpoints return `503` with a JSON error envelope when their
 downstream is unreachable or unconfigured.
+
+Use the **Containers** navigation link to manage containers without adding the full
+inventory to the monitoring page. Restart and redeploy require confirmation.
+Redeploy is available only for containers mapped to an unambiguous Portainer Git
+stack in the configured Compose source; it affects the **entire stack** and does
+not force image pulling. Containers without a supported stack still have restart
+available. If Portainer is unconfigured or unavailable, the page shows a warning
+but still lists Docker containers and allows restarts. Use **refresh** to reload
+the live list and stack mappings. These controls use the existing Docker socket
+and Portainer configuration; expose the app only to trusted users.
+
+### Image downloads
+
+The **Downloads** navigation link opens a separate page that polls every two
+seconds. Enter an image reference (tag or digest) to start a pull directly through
+the configured Docker socket. Untagged references use `latest`. Docker's configured
+registry credentials are used when available; missing credentials and pull errors
+are shown explicitly. This feature does not use docker-updater.
+
+Each pull shows bytes downloaded versus the compressed layer totals reported by
+Docker, with expandable per-layer details. Totals can grow as Docker discovers
+layers; they are **not a guaranteed whole-image total**. Cached layers are marked
+as already present, not counted as transferred bytes. Extraction counters are
+shown separately from download bytes. Reaching the reported byte total does not
+mean extraction is finished; a pull is complete only after Docker confirms success.
+
+Only pulls started through this app can be tracked, not existing pulls started by
+Compose, Portainer, or a terminal. Closing the page does not stop a pull. There is
+no cancel control. At most two pulls run concurrently; duplicate active references
+reuse the same job. The last 50 jobs are retained **in memory in this API process**
+and history resets on service restart. Use a single API process (as in the supplied
+deployment) so polling and starting pulls share the same tracker. Restarting the
+service loses tracking of in-flight pulls; their daemon-side outcome is unknown.
+Pulling an image can move its local tag but does not update running containers.
+These controls require Docker socket write access and should be limited to trusted
+users because downloads consume host bandwidth and disk space.
 
 Example `/summary`:
 

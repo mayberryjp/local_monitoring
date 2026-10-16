@@ -67,6 +67,10 @@ def register_check_routes(app: Bottle) -> None:
     def docker_check() -> dict[str, Any]:
         return _run(docker_containers.collect)
 
+    @app.get("/container-inventory")
+    def container_inventory() -> dict[str, Any]:
+        return _run(docker_containers.inventory)
+
     @app.get("/docker-monitors")
     def docker_monitors_check() -> dict[str, Any]:
         return _run(docker_monitors.collect)

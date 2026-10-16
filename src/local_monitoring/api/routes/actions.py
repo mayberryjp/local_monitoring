@@ -131,6 +131,13 @@ def register_action_routes(app: Bottle) -> None:
             return _missing("name")
         return _run(lambda: docker_containers.start_container(name))
 
+    @app.post("/actions/restart-container")
+    def restart_container() -> dict[str, Any]:
+        name = _target("name")
+        if not name:
+            return _missing("name")
+        return _run(lambda: docker_containers.restart_container(name))
+
     @app.post("/actions/delete-container")
     def delete_container() -> dict[str, Any]:
         name = _target("name")

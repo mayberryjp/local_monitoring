@@ -27,8 +27,8 @@ when the aggregate endpoint is called.
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/` | HTML status page rendering the down monitors, stopped containers, pending updates, unmonitored containers, and unused images. |
-| `GET` | `/containers` | Separate container management page with the full container list, restart buttons, and supported Portainer Git stack redeploy buttons. |
-| `GET` | `/container-inventory` | Live Docker inventory (`containers` with `name`, `state`, and `image`), independent of monitoring and Portainer. |
+| `GET` | `/containers` | Separate container management page with the full container list, restart buttons, supported Portainer Git stack redeploy buttons, and delete buttons for non-Compose containers. |
+| `GET` | `/container-inventory` | Live Docker inventory (`containers` with `name`, `state`, `image`, and `compose_managed`), independent of monitoring and Portainer. |
 | `GET` | `/downloads` | Read-only image-download page showing docker-updater's active pulls, refreshed every two seconds. |
 | `GET` | `/image-downloads` | Proxies docker-updater's `/api/pulls` as `{"status": "ok", "pulls": [...]}` with image, container, host, start time, byte counters, percentage, estimate flag, and pull phase. |
 | `GET` | `/health` | Process liveness. |
@@ -59,6 +59,7 @@ when the aggregate endpoint is called.
 | `POST` | `/actions/start-container` | Start one stopped container (JSON body `{"name": ...}`). |
 | `POST` | `/actions/restart-container` | Restart one existing container by exact name, keeping its current configuration (JSON body `{"name": ...}`). |
 | `POST` | `/actions/delete-container` | Delete one stopped container (JSON body `{"name": ...}`). |
+| `POST` | `/actions/delete-standalone-container` | Forcibly delete one non-Compose container, even if running (JSON body `{"name": ...}`); Compose-managed containers are rejected. Keeps images and volumes. |
 
 `/summary` always returns `200`; a failing check appears as an error object under its
 key. Individual check endpoints return `503` with a JSON error envelope when their
@@ -71,12 +72,18 @@ below the navigation, and clearing heartbeats requires confirmation.
 The header also displays the application version in small text beside the app name.
 
 Use the **Containers** navigation link to manage containers without adding the full
-inventory to the monitoring page. Restart and redeploy require confirmation.
+inventory to the monitoring page. Restart, redeploy, and delete require confirmation.
 Redeploy is available only for containers mapped to an unambiguous Portainer Git
 stack in the configured Compose source; it affects the **entire stack** and does
 not force image pulling. Containers without a supported stack still have restart
-available. If Portainer is unconfigured or unavailable, the page shows a warning
-but still lists Docker containers and allows restarts. Use **refresh** to reload
+available. Non-Compose containers also have a **delete** button, including when running.
+Deletion forcibly stops running containers and permanently removes their writable-layer
+data; images and volumes are kept. Compose ownership is detected from Docker labels
+and rechecked on the server before deletion, independently of Portainer stack support.
+The monitoring page's existing delete action remains limited to stopped containers.
+If Portainer is unconfigured or unavailable, the page shows a warning
+but still lists Docker containers and allows restarts and non-Compose deletion.
+Use **refresh** to reload
 the live list and stack mappings. These controls use the existing Docker socket
 and Portainer configuration; expose the app only to trusted users.
 

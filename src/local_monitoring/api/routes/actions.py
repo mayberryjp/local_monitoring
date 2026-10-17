@@ -144,3 +144,10 @@ def register_action_routes(app: Bottle) -> None:
         if not name:
             return _missing("name")
         return _run(lambda: docker_containers.remove_container(name))
+
+    @app.post("/actions/delete-standalone-container")
+    def delete_standalone_container() -> dict[str, Any]:
+        name = _target("name")
+        if not name:
+            return _missing("name")
+        return _run(lambda: docker_containers.remove_standalone_container(name))

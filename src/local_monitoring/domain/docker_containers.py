@@ -41,6 +41,11 @@ def _open_client() -> Any:
         raise CheckError("docker_unreachable", "docker socket unavailable", str(exc)) from exc
 
 
+def _is_compose_managed(container: Any) -> bool:
+    labels = container.attrs.get("Config", {}).get("Labels") or {}
+    return any(label.startswith("com.docker.compose.") for label in labels)
+
+
 def inventory() -> dict[str, Any]:
     """List every container without depending on the monitoring or Portainer APIs."""
     client = _open_client()
@@ -51,6 +56,7 @@ def inventory() -> dict[str, Any]:
                 "name": container.name,
                 "state": container.status,
                 "image": container.attrs.get("Config", {}).get("Image", ""),
+                "compose_managed": _is_compose_managed(container),
             }
             for container in containers
         ]
@@ -112,6 +118,25 @@ def remove_container(name: str) -> dict[str, Any]:
         if container is None:
             raise CheckError("not_found", f"container {name!r} is not a stopped container")
         container.remove(force=False)
+    except DockerException as exc:
+        raise CheckError("docker_unreachable", "docker container remove failed", str(exc)) from exc
+    finally:
+        client.close()
+    return {"deleted": target}
+
+
+def remove_standalone_container(name: str) -> dict[str, Any]:
+    """Remove an exact live non-Compose container, including running containers."""
+    target = name.strip()
+    client = _open_client()
+    try:
+        containers = client.containers.list(all=True)
+        container = next((c for c in containers if c.name == target), None)
+        if container is None:
+            raise CheckError("not_found", f"container {target!r} was not found")
+        if _is_compose_managed(container):
+            raise CheckError("compose_managed", f"container {target!r} is managed by Compose")
+        container.remove(force=True)
     except DockerException as exc:
         raise CheckError("docker_unreachable", "docker container remove failed", str(exc)) from exc
     finally:

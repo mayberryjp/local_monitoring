@@ -25,6 +25,7 @@ _CONTAINERS_HTML = """<!doctype html>
            border: 1px solid var(--border); border-radius: 6px; padding: .4rem .7rem;
            cursor: pointer; }
   button:hover { border-color: var(--accent); }
+  button.danger { color: var(--bad); }
   button:disabled { opacity: .5; cursor: default; }
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; background: var(--panel); }
@@ -45,7 +46,9 @@ _CONTAINERS_HTML = """<!doctype html>
   <h1>Container management</h1>
   <p class="muted">Restart keeps the existing container configuration.
     Redeploy pulls the configured Git Compose source and redeploys the entire Portainer stack,
-    not just this container. It does not force image pulling.</p>
+    not just this container. It does not force image pulling.
+    Delete is available only for non-Compose containers, including running ones.
+    It forcibly removes the container and its writable-layer data, but keeps images and volumes.</p>
   <p id="status" role="status">Loading containers...</p>
   <p id="warning" class="error" role="alert" hidden></p>
   <p id="message" role="status"></p>
@@ -83,12 +86,12 @@ _CONTAINERS_HTML = """<!doctype html>
     return td;
   }
 
-  function actionButton(cell, label, container, redeploy) {
+  function actionButton(cell, label, container, action) {
     var button = document.createElement("button");
     button.type = "button";
     button.textContent = label;
     button.setAttribute("aria-label", label + " " + container.name);
-    button.addEventListener("click", function () { runAction(button, container, redeploy); });
+    button.addEventListener("click", function () { runAction(button, container, action); });
     cell.appendChild(button);
     return button;
   }
@@ -105,14 +108,19 @@ _CONTAINERS_HTML = """<!doctype html>
       cell(row, container.image);
       var actions = cell(row, "");
       actions.className = "actions";
-      actionButton(actions, "restart", container, false);
-      var redeploy = actionButton(actions, "redeploy", container, true);
+      actionButton(actions, "restart", container, "restart");
+      var redeploy = actionButton(actions, "redeploy", container, "redeploy");
       redeploy.disabled = !redeployable.has(container.name);
       redeploy.dataset.unavailable = String(redeploy.disabled);
       redeploy.title = redeploy.disabled
         ? (compose ? "No supported Portainer Git stack for this container"
                    : "Portainer stack information unavailable")
         : "Pull Git Compose source and redeploy the entire stack";
+      if (container.compose_managed === false) {
+        var remove = actionButton(actions, "delete", container, "delete");
+        remove.className = "danger";
+        remove.title = "Permanently delete this non-Compose container, even if running";
+      }
       rows.appendChild(row);
     });
     board.hidden = containers.length === 0;
@@ -156,30 +164,38 @@ _CONTAINERS_HTML = """<!doctype html>
     load(true).then(function () { setBusy(false); });
   }
 
-  function runAction(button, container, redeploy) {
+  function runAction(button, container, action) {
     if (busy) return;
+    var redeploy = action === "redeploy";
+    var deleting = action === "delete";
     var prompt = redeploy
       ? "Pull Git Compose source and redeploy the ENTIRE stack for " + container.name + "?"
-      : "Restart " + container.name + "? This may interrupt the service.";
+      : deleting
+        ? "Permanently DELETE " + container.name + "? If running, it will be forcibly stopped. "
+          + "This interrupts the service and deletes all writable-layer data. "
+          + "Images and volumes are kept. This cannot be undone."
+        : "Restart " + container.name + "? This may interrupt the service.";
     if (!window.confirm(prompt)) return;
     setBusy(true);
     button.textContent = "working...";
     message.className = "";
     message.textContent = "";
-    requestJson(redeploy ? "/actions/redeploy-compose" : "/actions/restart-container", {
+    var url = redeploy ? "/actions/redeploy-compose"
+      : deleting ? "/actions/delete-standalone-container" : "/actions/restart-container";
+    requestJson(url, {
       method: "POST", cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(redeploy ? { container: container.name } : { name: container.name })
     }).then(function (data) {
       message.textContent = redeploy
         ? "Stack redeploy requested for " + container.name + (data.stack ? " (" + data.stack + ")" : "")
-        : "Restarted " + container.name;
+        : (deleting ? "Deleted " : "Restarted ") + container.name;
       return load(true);
     }).catch(function (error) {
       message.className = "error";
       message.textContent = "Action failed: " + error.message;
     }).then(function () {
-      button.textContent = redeploy ? "redeploy" : "restart";
+      button.textContent = action;
       setBusy(false);
     });
   }

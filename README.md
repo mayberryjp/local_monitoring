@@ -30,7 +30,7 @@ when the aggregate endpoint is called.
 | `GET` | `/containers` | Separate container management page with the full container list, restart buttons, and supported Portainer Git stack redeploy buttons. |
 | `GET` | `/container-inventory` | Live Docker inventory (`containers` with `name`, `state`, and `image`), independent of monitoring and Portainer. |
 | `GET` | `/downloads` | Read-only image-download page showing docker-updater's active pulls, refreshed every two seconds. |
-| `GET` | `/image-downloads` | Proxies docker-updater's `/api/pulls` as `{"status": "ok", "pulls": [...]}` with image, container, host, start time, byte counters, and percentage. |
+| `GET` | `/image-downloads` | Proxies docker-updater's `/api/pulls` as `{"status": "ok", "pulls": [...]}` with image, container, host, start time, byte counters, percentage, estimate flag, and pull phase. |
 | `GET` | `/health` | Process liveness. |
 | `GET` | `/ready` | Readiness (always ok — downstreams are checked per request). |
 | `GET` | `/summary` | All eleven checks in one object, run in parallel. Add `?refresh=true` to bypass the Compose inventory cache. |
@@ -84,20 +84,28 @@ and Portainer configuration; expose the app only to trusted users.
 
 The **Downloads** navigation link opens a read-only page that polls docker-updater
 every two seconds through this app's `/image-downloads` endpoint. Configure
-`DOCKER_UPDATER_BASE_URL` and deploy a docker-updater version supporting
-`GET /api/pulls`. Updates started from **Monitoring** or docker-updater appear
+`DOCKER_UPDATER_BASE_URL` and deploy docker-updater **v1.15.16 or newer**.
+The `GET /api/pulls` response must include `total_estimated` and `phase`;
+older response formats are rejected. Updates started from **Monitoring** or docker-updater appear
 automatically while their image pull is active, including remote-host pulls.
 No second pull is started, and this page does not need Docker socket access.
 The previous direct-pull form and `/actions/pull-image` endpoint have been removed.
 
 Each entry shows `image`, `container`, `host_id`, `started_at`, `progress_bytes`,
-`total_bytes`, and `percent_complete` from docker-updater. Unknown totals and
-percentages (`null`) show an indeterminate progress bar; zero-byte cached pulls
-can report 100%. Totals may change as Docker reports layers. Reaching 100% does
-not mean extraction or the container update has finished.
+`total_bytes`, `percent_complete`, `total_estimated`, and `phase` from docker-updater.
+Estimated totals are labelled **approximately**; upstream caps estimated percentages
+at 99%. Unknown percentages (`null`) show an indeterminate progress bar; totals can
+also be unknown, and zero-byte cached pulls can report 100%. Totals may change as
+Docker reports layers. Concurrent pulls may remain at 0% while waiting for Docker
+download slots; the API does not expose a separate queueing phase.
+
+The phase is shown as **Starting image pull**, **Downloading**, **Unpacking image**,
+or **Finishing image pull**. Reaching 100% does not mean unpacking or the container
+update has finished. The `finishing` phase only means the image pull is ending;
+it does not indicate container replacement.
 
 The upstream API lists **active pulls only**: an entry disappears when its pull
-finishes, fails, or is cancelled. No history, per-layer details, or final update
+finishes, fails, or is cancelled, before container recreation. No history, per-layer details, or final update
 outcome is supplied; check docker-updater's update log for the result. Pulls
 started independently by Compose, Portainer, or a terminal are not tracked.
 Missing configuration, unsupported upstream versions, authentication failures,

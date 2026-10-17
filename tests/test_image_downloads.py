@@ -28,6 +28,8 @@ def _pull(**changes: Any) -> dict[str, Any]:
         "progress_bytes": 5242880,
         "total_bytes": 10485760,
         "percent_complete": 50.0,
+        "total_estimated": False,
+        "phase": "downloading",
         **changes,
     }
 
@@ -77,6 +79,26 @@ def test_unknown_totals_cached_layers_and_multiple_hosts(client: TestApp, upstre
     assert client.get("/image-downloads").json["pulls"] == pulls
 
 
+@pytest.mark.parametrize("phase", ["starting", "downloading", "extracting", "finishing"])
+@pytest.mark.parametrize("total_estimated", [False, True])
+def test_phase_and_estimate_are_preserved(
+    client: TestApp, upstream: Mock, phase: str, total_estimated: bool
+) -> None:
+    pull = _pull(phase=phase, total_estimated=total_estimated)
+    upstream.return_value.json.return_value = {"pulls": [pull]}
+    assert client.get("/image-downloads").json["pulls"] == [pull]
+
+
+@pytest.mark.parametrize("field", ["phase", "total_estimated"])
+def test_legacy_progress_is_rejected(client: TestApp, upstream: Mock, field: str) -> None:
+    pull = _pull()
+    del pull[field]
+    upstream.return_value.json.return_value = {"pulls": [pull]}
+    response = client.get("/image-downloads", status=503)
+    assert response.json["code"] == "upstream_error"
+    assert response.json["error"] == "docker-updater returned invalid pull progress"
+
+
 def test_unconfigured_is_not_an_empty_list(
     client: TestApp, upstream: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -121,6 +143,13 @@ def test_network_failure(client: TestApp, upstream: Mock, error: Exception) -> N
         {"pulls": [_pull(percent_complete=float("nan"))]},
         {"pulls": [_pull(percent_complete=float("inf"))]},
         {"pulls": [_pull(image="")]},
+        {"pulls": [_pull(total_estimated=None)]},
+        {"pulls": [_pull(total_estimated="true")]},
+        {"pulls": [_pull(total_estimated=1)]},
+        {"pulls": [_pull(phase=None)]},
+        {"pulls": [_pull(phase="queued")]},
+        {"pulls": [_pull(phase="")]},
+        {"pulls": [_pull(phase=1)]},
     ],
 )
 def test_malformed_progress_is_an_explicit_error(

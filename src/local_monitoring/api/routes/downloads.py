@@ -43,9 +43,11 @@ _DOWNLOADS_HTML = """<!doctype html>
     docker-updater. This page only observes progress; it does not start another pull.</p>
   <p id="poll-error" class="error" role="alert" hidden></p>
   <p id="status" class="muted" role="status">Loading downloads...</p>
-  <p class="muted">Refreshes every 2 seconds. Totals may change as Docker reports layers and
-    may be unknown. Cached layers need no download; 100% downloaded does not mean extraction
-    or the container update has finished. Pulls disappear when they finish, fail, or are cancelled.
+  <p class="muted">Refreshes every 2 seconds. Estimated totals are labelled and may change as
+    Docker reports layers; totals may also be unknown. Concurrent pulls can remain at 0% while
+    waiting for Docker download slots. Cached layers need no download; 100% downloaded does
+    not mean unpacking or the container update has finished. Finishing means the image pull
+    is ending, not that the container is being replaced. Pulls disappear when they finish, fail, or are cancelled.
     No history or final update result is provided here; check docker-updater for the outcome.</p>
   <section id="downloads" aria-label="Image downloads"></section>
 </main>
@@ -56,6 +58,12 @@ _DOWNLOADS_HTML = """<!doctype html>
   var refreshButton = document.getElementById("refresh");
   var polling = false;
   var loaded = false;
+  var phaseLabels = {
+    starting: "Starting image pull",
+    downloading: "Downloading",
+    extracting: "Unpacking image",
+    finishing: "Finishing image pull"
+  };
 
   function bytes(value) {
     if (value === null || value === undefined) return "unknown";
@@ -87,7 +95,9 @@ _DOWNLOADS_HTML = """<!doctype html>
       text(card, "h2", job.image);
       text(card, "p", "Container: " + job.container + " | Host: " + job.host_id);
       text(card, "p", "Started: " + job.started_at, "muted");
-      text(card, "p", bytes(job.progress_bytes) + " / " + bytes(job.total_bytes) +
+      text(card, "p", phaseLabels[job.phase]);
+      text(card, "p", bytes(job.progress_bytes) + " / " +
+        (job.total_estimated ? "approximately " : "") + bytes(job.total_bytes) +
         " downloaded - " +
         (job.percent_complete === null ? "percentage unknown" : job.percent_complete + "%"));
       progress(card, job.percent_complete, "Download progress for " + job.container + " on " + job.host_id);

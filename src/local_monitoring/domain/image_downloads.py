@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import requests
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,6 +22,8 @@ class _Pull(BaseModel):
     progress_bytes: int = Field(ge=0)
     total_bytes: int | None = Field(ge=0)
     percent_complete: float | None = Field(ge=0, le=100)
+    total_estimated: bool
+    phase: Literal["starting", "downloading", "extracting", "finishing"]
 
 
 class _PullsResponse(BaseModel):

@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # docker-updater pending-updates count.
     docker_updater_base_url: str = Field("", validation_alias="DOCKER_UPDATER_BASE_URL")
 
+    # Mirenai API for refreshing local DNS zones.
+    mirenai_base_url: str = Field("", validation_alias="MIRENAI_BASE_URL")
+
     # Docker socket for the running/stopped container count.
     docker_host: str = Field("unix:///var/run/docker.sock", validation_alias="DOCKER_HOST")
 

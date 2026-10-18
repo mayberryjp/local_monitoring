@@ -54,6 +54,7 @@ when the aggregate endpoint is called.
 | `POST` | `/actions/add-docker-monitor` | Create a Docker monitor for one uncovered container (JSON body `{"container": ..., "host_id": ...}`). |
 | `POST` | `/actions/add-status-page-monitor` | Add one existing Uptime Kuma monitor to the configured status page (JSON body `{"monitor_id": ...}`). |
 | `POST` | `/actions/clear-heartbeats` | Clear heartbeat history and aggregate uptime statistics for every Uptime Kuma v2 monitor; monitor definitions are retained. |
+| `POST` | `/actions/reload-local-dns` | Refresh every Mirenai local DNS zone concurrently, including disabled zones, and report failures after all requests finish. |
 | `POST` | `/actions/redeploy-compose` | Pull and redeploy the Portainer Git stack mapped to a container (JSON body `{"container": ...}`); does not force image pulling. |
 | `POST` | `/actions/delete-monitor` | Delete one additional Uptime Kuma v2 monitor (JSON body `{"name": ...}`). |
 | `POST` | `/actions/start-container` | Start one stopped container (JSON body `{"name": ...}`). |
@@ -66,10 +67,17 @@ key. Individual check endpoints return `503` with a JSON error envelope when the
 downstream is unreachable or unconfigured.
 
 All three tabs share the same app header and toolbar. **Clear all monitor
-heartbeats** and **check for container updates** are available on every tab;
+heartbeats**, **check for container updates**, and **reload local DNS** are available on every tab;
 **refresh** reloads the current tab's data. Global action results and errors appear
 below the navigation, and clearing heartbeats requires confirmation.
 The header also displays the application version in small text beside the app name.
+
+**Reload local DNS** requires `MIRENAI_BASE_URL` (for example, `http://mirenai:8000`).
+It fetches all zones using Mirenai's unpaginated `GET /local-zones`, calls
+`POST /local-zones/{id}/refresh` for each zone with up to eight concurrent requests,
+then reloads the zone list. The button stays disabled until all requests finish and
+reports how many zones refreshed and how many failed. This refreshes local records,
+not Mirenai's DNS cache or blocklists.
 
 Use the **Containers** navigation link to manage containers without adding the full
 inventory to the monitoring page. Restart, redeploy, and delete require confirmation.
@@ -158,6 +166,7 @@ All configuration is via environment variables, set in `docker-compose.yml`.
 | `WEBDAV_PASSWORD` | — | Optional basic-auth password. |
 | `WEBDAV_RECENT_HOURS` | `24` | File is "recent" if modified within this many hours. |
 | `DOCKER_UPDATER_BASE_URL` | — | Base URL of docker-updater, e.g. `http://docker-updater:9090`. |
+| `MIRENAI_BASE_URL` | — | Mirenai API base URL for **reload local DNS**, e.g. `http://mirenai:8000`. |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker socket for the container count. |
 | `PORTAINER_API_KEY` | — | Portainer API access token sent using `X-API-Key`; required for Compose stack lookup and redeploy. |
 | `DOCKER_COMPOSE` | — | GitHub Compose source URL including its site directory, e.g. `https://github.com/mayberryjp/dockercompose/house` or `/farm`. |

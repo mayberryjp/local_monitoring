@@ -21,6 +21,9 @@ services:
       # 3) docker-updater pending-updates count
       DOCKER_UPDATER_BASE_URL: http://docker-updater:9090
 
+      # Mirenai local DNS zone refresh action
+      MIRENAI_BASE_URL: ""
+
       # 4) Docker running/stopped container count
       DOCKER_HOST: unix:///var/run/docker.sock
 

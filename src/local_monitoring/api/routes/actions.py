@@ -13,6 +13,7 @@ from local_monitoring.domain import (
     docker_images,
     docker_monitors,
     docker_updater,
+    local_dns,
     ping_monitors,
     portainer_stacks,
     status_page_monitors,
@@ -50,6 +51,10 @@ def _missing(field: str) -> dict[str, Any]:
 
 
 def register_action_routes(app: Bottle) -> None:
+    @app.post("/actions/reload-local-dns")
+    def reload_local_dns() -> dict[str, Any]:
+        return _run(local_dns.refresh_all)
+
     @app.post("/actions/update-all")
     def update_all() -> dict[str, Any]:
         return _run(docker_updater.update_all)

@@ -54,6 +54,7 @@ _HEADER = """
     <div class="header-actions">
       <button id="clear-all-heartbeats" class="danger" type="button">clear all monitor heartbeats</button>
       <button id="check-updates" type="button">check for container updates</button>
+      <button id="reload-local-dns" type="button">reload local DNS</button>
       <button id="refresh" type="button">refresh</button>
     </div>
   </header>
@@ -71,6 +72,7 @@ _SCRIPT = """
     var error = document.getElementById("header-error");
     var clearButton = document.getElementById("clear-all-heartbeats");
     var checkButton = document.getElementById("check-updates");
+    var dnsButton = document.getElementById("reload-local-dns");
 
     function run(button, url, working, fallback, suffix, refreshAfter) {
       if (button.disabled) return;
@@ -108,6 +110,10 @@ _SCRIPT = """
     checkButton.addEventListener("click", function () {
       run(checkButton, "/actions/check-updates", "starting check...",
           "docker-updater container check started", " - click refresh in a minute for results", false);
+    });
+    dnsButton.addEventListener("click", function () {
+      run(dnsButton, "/actions/reload-local-dns", "reloading DNS...",
+          "local DNS zones refreshed", "", false);
     });
   })();
 </script>

@@ -66,12 +66,13 @@ def test_pages_share_header_toolbar_and_layout(client: TestApp) -> None:
     assert all(header is not None for header in headers)
     assert len({header[0] for header in headers if header is not None}) == 1
     for page in pages:
-        for button in ("clear-all-heartbeats", "check-updates", "refresh"):
+        for button in ("clear-all-heartbeats", "check-updates", "reload-local-dns", "refresh"):
             assert page.count(f'id="{button}"') == 1
         assert 'id="header-message" role="status"' in page
         assert 'id="header-error" role="alert"' in page
         assert '"/actions/clear-heartbeats"' in page
         assert '"/actions/check-updates"' in page
+        assert '"/actions/reload-local-dns"' in page
         assert "Monitor definitions will remain" in page
         assert ".wrap { max-width: 1100px;" in page
         assert "__PAGE_" not in page
